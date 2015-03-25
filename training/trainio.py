@@ -1,7 +1,7 @@
 from __future__ import print_function, division
 import numpy as np
 import os
-
+import struct
 
 
 def readPartRnn(filepath):
@@ -12,10 +12,14 @@ def readPartRnn(filepath):
     """
     
     with open(filepath) as fp:
-        fp.seek(2*4)
+        bytes = fp.read(4*4)
+        head = struct.unpack('iiii', bytes)
+        print('Number of particles in {0}: {1}'.format(filepath, head[1]))
+        print('Number of nearest neighbors in {0}: {1}'.format(filepath, head[2]))   
         delta = np.fromfile(fp, dtype=np.float)
 
     return delta
+
 
 def readHaloRnn(filepath):
     """
@@ -23,6 +27,11 @@ def readHaloRnn(filepath):
     into numpy array
 
     """
+    
+    dtype = np.dtype([('id', int), ('rnn', np.float64)])
+    delta = np.genfromtxt(filepath, dtype=dtype)
+
+    return delta
     
 
 def readHlist(filepath):
