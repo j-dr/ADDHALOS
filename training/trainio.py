@@ -2,7 +2,7 @@ from __future__ import print_function, division
 import numpy as np
 import os
 import struct
-
+import itertools
 
 def readPartRnn(filepath):
     """ 
@@ -30,7 +30,8 @@ def readHaloRnn(filepath):
     
     dtype = np.dtype([('id', int), ('rnn', np.float64)])
     delta = np.genfromtxt(filepath, dtype=dtype)
-
+    u, uind = np.unique(delta['id'], return_index=True)
+    delta = delta[uind]
     return delta
     
 
@@ -72,3 +73,29 @@ def readHlist(filepath):
     return halos
     
     
+def readData(indict):
+    
+    paths = indict.keys
+    feats = itertools.chain(*indict.values)
+    dtype = np.dtype([(f, np.float) for f in feats])
+
+    for i, path in enumerate(paths):
+        if ('rnn' in path) and ('hlist' in path):
+            d = readHaloRnn(path)
+        elif ('rnn' in path) and ('snapshot' in path):
+            d = readParticleRnn(path)
+        elif 'hlist' in path:
+            d = readHlist(path)
+        else:
+            print("""This feature is not currently handled, if you would like to use
+                     if you would like to use it, please add a new i/o fuction
+                     """)
+
+        if i==0:
+            data = np.ndarray(len(d),dtype=feats)
+            
+        data[indict[path]] = d
+        
+    return data
+                  
+
