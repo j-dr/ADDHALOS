@@ -28,10 +28,11 @@ def readHaloRnn(filepath):
 
     """
     
-    dtype = np.dtype([('id', int), ('rnn', np.float64)])
+    dtype = np.dtype([('id', int), ('delta', np.float64)])
     delta = np.genfromtxt(filepath, dtype=dtype)
-    u, uind = np.unique(delta['id'], return_index=True)
-    delta = delta[uind]
+    delta = delta[delta['id']!=0]
+    #u, uind = np.unique(delta['id'], return_index=True)
+    #delta = delta[uind]
     return delta
     
 
@@ -69,15 +70,32 @@ def readHlist(filepath):
         
 
     halos = np.genfromtxt(filepath,dtype=dtype,usecols=usecols)
+    print(len(halos[halos['id']==0]))
+    halos = halos[halos['id']!=0]
+    #u, uind = np.unique(halos['id'], return_index=True)
+    #halos = halos[uind]
 
     return halos
     
     
 def readData(indict):
+    """
+    Takes as input a dictionary with paths to data
+    as keys, and the name of the field to select as values.
+    Returns a record array with the field names as keys populated
+    by the data in the file located at the path provided
     
-    paths = indict.keys
-    feats = itertools.chain(*indict.values)
+    """
+
+    paths = indict.keys()
+
+    if len(paths)==1:
+        feats = indict.values()
+    else:
+        feats = [f for f in itertools.chain(*indict.values())]
+
     dtype = np.dtype([(f, np.float) for f in feats])
+    print(dtype)
 
     for i, path in enumerate(paths):
         if ('rnn' in path) and ('hlist' in path):
@@ -88,13 +106,13 @@ def readData(indict):
             d = readHlist(path)
         else:
             print("""This feature is not currently handled, if you would like to use
-                     if you would like to use it, please add a new i/o fuction
+                     it, please add a new i/o fuction
                      """)
 
         if i==0:
-            data = np.ndarray(len(d),dtype=feats)
+            data = np.ndarray(len(d),dtype=dtype)
             
-        data[indict[path]] = d
+        data[indict[path]] = d[indict[path]]
         
     return data
                   
