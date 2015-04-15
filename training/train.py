@@ -1,8 +1,12 @@
 from __future__ import print_function, division
 import numpy as np
+if __name__=='__main__':
+    import matplotlib as mpl
+    mpl.use('Agg')
+
 import model
 import trainio
-
+import matplotlib.pyplot as plt
 
 def trainModel(featdata, preddata, modeltype='HistGauss'):
     """
@@ -19,26 +23,30 @@ def trainModel(featdata, preddata, modeltype='HistGauss'):
     
     if modeltype=='HistGauss':
         mod = model.HistGauss(features, pred)
+    elif modeltype=='BDT':
+        mod = model.BDT(features, pred)
     else:
         print("""Invalid model specification, please provide a valid model
                  for the modeltype keyword""")
 
     mod.preprocess()
-    mod.train()
+    mod.train(cv=5)
     
     return mod
 
 
 
 if __name__ == "__main__":    
-    featpath = '/nfs/slac/g/ki/ki22/cosmo/jderose/halos/calcrnn/output/FLb400/snapdir010/rnn_hlist_10'
-    predpath = '/nfs/slac/g/ki/ki21/cosmo/jderose/halos/rockstar/output/FLb400/hlists/hlist_10.list'
+    featpath = '/nfs/slac/g/ki/ki22/cosmo/jderose/halos/calcrnn/output/FLb400/snapdir099/rnn_hlist_99'
+    predpath = '/nfs/slac/g/ki/ki21/cosmo/jderose/halos/rockstar/output/FLb400/hlists/hlist_99.list'
     
     featdata = {featpath:'delta'}
     preddata = {predpath:'M200b'}
 
     mod = trainModel(featdata, preddata)
-
+    mod.vismodel()
+    plt.savefig('train_tests/gp_hlist_99.png')
+    
 
 
 
