@@ -88,6 +88,9 @@ class HistGauss(Model):
         for i in range(len(centers)):
             self.X[:,i] = temp[i].flatten()
         
+        self.features = None
+        self.pred = None
+        
         
 
 
@@ -99,7 +102,7 @@ class HistGauss(Model):
 
         #Poisson fractional errors on histograms, hopefully won't screw with GP assumptions
         ii = np.where(self.y!=0)
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X[ii], self.y[ii], test_size=0.5, random_state=0)
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=0.5, random_state=0)
 
         print('np.shape(X_train): {0}'.format(np.shape(self.X_train)))
         print('np.shape(y_train): {0}'.format(np.shape(self.y_train)))
@@ -108,10 +111,9 @@ class HistGauss(Model):
             parameters = {'theta0': [1e-8,1e-5,1e-2], 'thetaL': [1e-6,1e-5,1e-4], 'thetaU': [1e-3,1e-2,1], 'nugget': [1e-10,1e-5,1e-2,1]}
             scorer = make_scorer(r2_score)
             gp = gaussian_process.GaussianProcess()
-            #gp = gaussian_process.GaussianProcess(nugget=self.nug_train.flatten())
             reg = GridSearchCV(gp,parameters,cv=cv,scoring=scorer)
         else:
-            reg = gaussian_process.GaussianProcess(theta0=1e-2, thetaL=1e-2, thetaU=1e-1)
+            reg = gaussian_process.GaussianProcess(theta0=[5e9,1], thetaL=[1e9,1e-1], thetaU=[1e10,1e1], nugget=1e-5)
 
         try:
             reg.fit(self.X_train, self.y_train)
@@ -124,6 +126,12 @@ class HistGauss(Model):
         self.reg = reg
         self.integrate_gp()
 
+    
+    def select_train_test(self):
+        #ii = np.where(self.y!=0)
+        
+
+        pass
         
     
     def integrate_gp(self):
@@ -131,7 +139,7 @@ class HistGauss(Model):
         Integrate the GP to get CDF of parameter we want to predict
 
         """
-        centers = [(e[1:]+e[:-1])/2 for e in self.edges))]
+        centers = [(e[1:]+e[:-1])/2 for e in self.edges]
         self.centers = centers
         grid = np.meshgrid(*centers)
         pX = np.ndarray((len(grid[0].ravel()), len(grid)))
@@ -146,7 +154,7 @@ class HistGauss(Model):
         weights = pdf*dx
         
         self.cdf = np.cumsum(weights, axis=-1)
-        self.cdf = self.cdf/self.cdf[:,-1]
+        #self.cdf = self.cdf/self.cdf[:,-1]
         self.cdfgrid = grid
 
         
@@ -174,16 +182,15 @@ class HistGauss(Model):
         
 
 
-
     def vismodel(self):
 
         ncuts = 5
-        f, ax = plt.subplots(ncuts,2)
+        f, ax = plt.subplots(ncuts,ncuts)
         sX = np.sort(np.unique(self.X[:,0]))
 
         for i in range(ncuts):
-            for j in range(2):
-                d = sX[len(sX)*(i*2+j)/(2*ncuts)]
+            for j in range(ncuts):
+                d = sX[len(sX)*(i*ncuts+j)/(ncuts**2)]
                 xii = np.where(self.X[:,0]==d)
             
                 pred = self.reg.predict(self.X[xii])
@@ -198,29 +205,29 @@ class HistGauss(Model):
         
         
 
-class BDT(Model):
+class RF(Model):
 
     def train(self, cv=None):
         """                                                                                                                                                               Fit a predictive model to features and pred                                                                                                                       """
-        ii = np.where(self.y!=0.0)
+
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=0.5, random_state=0)
 
         if cv!=None:
             pass
         else:
             try:
-                reg = ensemble.GradientBoostingRegressor(n_estimators=200, max_depth=3)
-                reg.fit(self.X[ii],self.y[ii])
+                reg = ensemble.RandomForestRegressor()
+                reg.fit(self.X_train,self.y_train)
             except Exception as e:
                 print(e)
                 print('*****Fit Failed*****')
 
-        self.fitind = ii
         self.reg = reg
 
 
     def preprocess(self):
         """                                                                                                                                                               Clean the data                                                                                                                                                    """
-        self.X = np.atleast_2d(self.features['delta'])
+        self.X = np.atleast_2d(self.features['delta']).T
         self.y = self.pred['M200b']
 
 
@@ -232,22 +239,14 @@ class BDT(Model):
 
     def vismodel(self):
 
-        ncuts = 5
-        f, ax = plts.subplot(ncuts)
-        sii = np.argsort(self.X)
-        sX = self.X[sii]
-        sy = self.y[sii]
+        f, ax = plt.subplots(2)
+        
+        pred = self.reg.predict(self.X_test)
+        ii = np.random.choice(np.arange(len(pred)), 1000, replace=False)
+        sns.kdeplot(self.X_test[ii].ravel(),pred[ii],label='Prediction',ax=ax[0])
+        sns.kdeplot(self.X_test[ii].ravel(),self.y_test[ii], label='Truth', ax=ax[1])
+        plt.legend()
 
-        for i in range(ncuts):
-            dbin = [sX[len(sX)*i/5], sX[len(sX)*(i+1)/5]]
-            xii = np.where((dbin[0]<=sX)&(sX<=dbin[1]))
-            pred = self.reg.predict(sX[xii])
-            
-            ax[i].plot(sX[xii],pred,label='Prediction')
-            ax[i].plot(sX[xii],sy[xii], label='Truth')
-            plt.legend()
-
-        plt.tight_layout()
                     
         
         

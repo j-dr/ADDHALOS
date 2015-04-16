@@ -7,8 +7,9 @@ if __name__=='__main__':
 import model
 import trainio
 import matplotlib.pyplot as plt
+import cPickle
 
-def trainModel(featdata, preddata, modeltype='HistGauss'):
+def trainModel(featdata, preddata, modeltype='HistGauss', cv=None):
     """
     Given dictionaries with keys as paths, values as features to use,
     read in data and train the model.
@@ -23,14 +24,14 @@ def trainModel(featdata, preddata, modeltype='HistGauss'):
     
     if modeltype=='HistGauss':
         mod = model.HistGauss(features, pred)
-    elif modeltype=='BDT':
-        mod = model.BDT(features, pred)
+    elif modeltype=='RF':
+        mod = model.RF(features, pred)
     else:
         print("""Invalid model specification, please provide a valid model
                  for the modeltype keyword""")
 
     mod.preprocess()
-    mod.train(cv=5)
+    mod.train(cv=cv)
     
     return mod
 
@@ -45,7 +46,9 @@ if __name__ == "__main__":
 
     mod = trainModel(featdata, preddata)
     mod.vismodel()
-    plt.savefig('train_tests/gp_hlist_99.png')
+    plt.savefig('train_tests/gp_hlist_99.1.png')
+    with open('train_tests/gp_99.p', 'w') as fp:
+        cpickle.dump(mod,fp)
     
 
 
