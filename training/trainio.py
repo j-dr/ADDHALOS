@@ -3,6 +3,8 @@ import numpy as np
 import os
 import struct
 import itertools
+import pynbody as pnb
+from glob import glob
 
 def readPartRnn(filepath):
     """ 
@@ -14,9 +16,8 @@ def readPartRnn(filepath):
     with open(filepath) as fp:
         bytes = fp.read(4*4)
         head = struct.unpack('iiii', bytes)
-        print('Number of particles in {0}: {1}'.format(filepath, head[1]))
-        print('Number of nearest neighbors in {0}: {1}'.format(filepath, head[2]))   
-        delta = np.fromfile(fp, dtype=np.float)
+        dtype = np.dtype([('delta', np.float)])
+        delta = np.fromfile(fp, dtype=dtype)
 
     return delta
 
@@ -76,8 +77,20 @@ def readHlist(filepath):
     #halos = halos[uind]
 
     return halos
+
+def readGadgetParticles(filepath):
+    """
+    Read in particles from a gadget output file, and return an array
+    containing their ids, positions and velocities
+    """
+
+    s = pnb.load(filepath)
+    parts = np.hstack((np.atleast_2d(np.array(s['iord'])).T, np.array(s['pos']), np.array(s['vel'])))
+
+    return parts
+
     
-    
+
 def readData(indict):
     """
     Takes as input a dictionary with paths to data
@@ -101,13 +114,23 @@ def readData(indict):
         if ('rnn' in path) and ('hlist' in path):
             d = readHaloRnn(path)
         elif ('rnn' in path) and ('snapshot' in path):
-            d = readParticleRnn(path)
+            if '*' in path:
+                files = glob(path)
+                for j,f in enumerate(files):
+                    if j==0:
+                        d = readPartRnn(f)
+                    else:
+                        gd = readPartRnn(f)
+                        d = np.hstack((d,gd))
+            else:
+                d = readParticleRnn(path)
         elif 'hlist' in path:
             d = readHlist(path)
         else:
             print("""This feature is not currently handled, if you would like to use
                      it, please add a new i/o fuction
                      """)
+            return None
 
         if i==0:
             data = np.ndarray(len(d),dtype=dtype)

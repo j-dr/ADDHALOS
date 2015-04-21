@@ -20,11 +20,13 @@ import pickle
 class Model:
     __metaclass__ = ABCMeta
 
-    def __init__(self, features, pred, pmod=None):
+    def __init__(self, hfeatures, pfeatures, pred, pmod=None):
 
         if pmod==None:
-            self.features = features
+            self.hfeatures = hfeatures
+            self.pfeatures = pfeatures
             self.pred = pred
+
         else:
             raise NotImplementedError
             
@@ -54,6 +56,17 @@ class Model:
         """
         pass
 
+    def feature_dist(self):
+        
+        pcounts, e = np.histogramdd(self.pfeatures.view((np.float, len(self.pfeatures.dtype.names))), bins=self.edges[:-1])
+        hcounts, e = np.histogramdd(self.hfeatures.view((np.float, len(self.hfeatures.dtype.names))), bins=self.edges[:-1])
+
+        #Probability that a halo is present at a particle with features in a particular bin of feature space
+        #is the number of halos in that bin of feature space over the number of particles in that bin of 
+        #feature space
+
+        self.php = hcounts/pcounts
+
 
         
 class HistGauss(Model):
@@ -72,7 +85,7 @@ class HistGauss(Model):
         Create a histogram from the feature data and data to predict
         
         """
-        arrays = [self.features, self.pred]
+        arrays = [self.hfeatures, self.pred]
         histarray = munge.join_rec_arrays(arrays)
 
         counts, edges = np.histogramdd(histarray.view((np.float, len(histarray.dtype.names))),\
@@ -88,11 +101,10 @@ class HistGauss(Model):
         for i in range(len(centers)):
             self.X[:,i] = temp[i].flatten()
         
-        self.features = None
+        self.hfeatures = None
         self.pred = None
         
         
-
 
     def train(self, cv=None):
         """
@@ -113,7 +125,7 @@ class HistGauss(Model):
             gp = gaussian_process.GaussianProcess()
             reg = GridSearchCV(gp,parameters,cv=cv,scoring=scorer)
         else:
-            reg = gaussian_process.GaussianProcess(theta0=[5e9,1], thetaL=[1e9,1e-1], thetaU=[1e10,1e1], nugget=1e-5)
+            reg = gaussian_process.GaussianProcess(theta0=[1e12,1], thetaL=[1e10,1e-1], thetaU=[1e14,1e1], nugget=1e-5)
 
         try:
             reg.fit(self.X_train, self.y_train)
@@ -125,6 +137,7 @@ class HistGauss(Model):
 
         self.reg = reg
         self.integrate_gp()
+        #self.feature_dist()
 
     
     def select_train_test(self):
@@ -184,22 +197,21 @@ class HistGauss(Model):
 
     def vismodel(self):
 
-        ncuts = 5
+        ncuts = 3
         f, ax = plt.subplots(ncuts,ncuts)
         sX = np.sort(np.unique(self.X[:,0]))
+        dbins = np.logspace(np.log10(np.min(sX)),np.log10(np.max(sX))/2,ncuts**2+1)
+        for i,d in enumerate(dbins):
+            if i==(len(dbins)-1): continue
+            xii = np.where((dbins[i]<=self.X[:,0]) & (self.X[:,0]<dbins[i+1]))
+            pred = self.reg.predict(self.X[xii])
+            truth = self.y[xii]
 
-        for i in range(ncuts):
-            for j in range(ncuts):
-                d = sX[len(sX)*(i*ncuts+j)/(ncuts**2)]
-                xii = np.where(self.X[:,0]==d)
-            
-                pred = self.reg.predict(self.X[xii])
-                truth = self.y[xii]
-            
-                ax[i,j].plot(self.X[xii][:,1],pred,label='Prediction')
-                ax[i,j].plot(self.X[xii][:,1],truth, label='Truth')
-                ax[i,j].set_title('Density = {0}'.format(d))
-                plt.legend()
+            ax[i/ncuts,i%ncuts].set_xscale("log", nonposx='clip')
+            ax[i/ncuts,i%ncuts].plot(self.X[xii][:,1],pred,label='Prediction')
+            ax[i/ncuts,i%ncuts].plot(self.X[xii][:,1],truth, label='Truth')
+            ax[i/ncuts,i%ncuts].set_title('Density = {0:.2f}'.format(d))
+            plt.legend()
 
         plt.tight_layout()
         
@@ -216,7 +228,7 @@ class RF(Model):
             pass
         else:
             try:
-                reg = ensemble.RandomForestRegressor()
+                reg = ensemble.RandomForestRegressor(n_jobs=-1)
                 reg.fit(self.X_train,self.y_train)
             except Exception as e:
                 print(e)
@@ -227,7 +239,7 @@ class RF(Model):
 
     def preprocess(self):
         """                                                                                                                                                               Clean the data                                                                                                                                                    """
-        self.X = np.atleast_2d(self.features['delta']).T
+        self.X = np.atleast_2d(self.hfeatures['delta']).T
         self.y = self.pred['M200b']
 
 
@@ -240,24 +252,15 @@ class RF(Model):
     def vismodel(self):
 
         f, ax = plt.subplots(2)
-        
+        ax[0].set_yscale('log', nonposy='clip')
+        ax[1].set_yscale('log', nonposy='clip')
+
         pred = self.reg.predict(self.X_test)
-        ii = np.random.choice(np.arange(len(pred)), 1000, replace=False)
-        sns.kdeplot(self.X_test[ii].ravel(),pred[ii],label='Prediction',ax=ax[0])
-        sns.kdeplot(self.X_test[ii].ravel(),self.y_test[ii], label='Truth', ax=ax[1])
+        
+        nii = np.random.choice(np.arange(len(pred)), 10000, replace=False)
+        ii0 = np.where((self.X_test[nii]>0) & (pred[nii]>0))
+        ii1 = np.where((self.X_test[nii]>0) & (self.y_test[nii]>0))
+        sns.kdeplot(self.X_test[nii][ii0].ravel(),pred[nii][ii0],label='Prediction',ax=ax[0])
+        sns.kdeplot(self.X_test[nii][ii1].ravel(),self.y_test[nii][ii1], label='Truth', ax=ax[1])
         plt.legend()
 
-                    
-        
-        
-        
-
-        
-
-
-
-
-    
-
-
-    
