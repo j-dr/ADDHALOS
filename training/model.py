@@ -1,4 +1,4 @@
-from __future__ import print_function
+from __future__ import print_function, division
 import numpy as np
 import scipy as sp
 from bisect import bisect_left
@@ -8,7 +8,7 @@ from sklearn.grid_search import GridSearchCV
 from sklearn.cross_validation import train_test_split
 from sklearn.metrics import r2_score, make_scorer
 from abc import ABCMeta, abstractmethod
-from random import random
+import random
 from astroML.density_estimation import bayesian_blocks
 import seaborn as sns
 sns.set_context("talk")
@@ -90,13 +90,13 @@ class HistGauss(Model):
         histarray = munge.join_rec_arrays(arrays)
         histarray = histarray.view((np.float, len(histarray.dtype.names)))
 
-        bins = adaptive_binning(histarray)
+        bins = self.adaptive_binning(histarray)
         counts, edges = np.histogramdd(histarray, bins=bins, normed=normed)
 
         self.edges = bins
         centers = [[(edges[i][j]+edges[i][j+1])/2 for j in range(len(edges[i])-1)] for i in range(len(edges))]
 
-        npts = 0
+        npts = 1
         for i in range(len(centers)):
             npts*=len(centers[i])
 
@@ -126,7 +126,6 @@ class HistGauss(Model):
         return bins
         
         
-
     def train(self, cv=None):
         """
         Train a gaussian process on the preprocessed histogram in order to determine P(keyatt|predatt)
@@ -162,9 +161,9 @@ class HistGauss(Model):
 
     
     def select_train_test(self):
-        #ii = np.where(self.y!=0)
-        
-
+        """
+        Sample data 'optimally', to reduce size of training set
+        """
         pass
         
     
@@ -191,9 +190,6 @@ class HistGauss(Model):
         #self.cdf = self.cdf/self.cdf[:,-1]
         self.cdfgrid = grid
 
-        
-        
-        
 
     def predict(self, fvec):
         """
@@ -215,8 +211,35 @@ class HistGauss(Model):
         return self.centers[-1][mii]
         
 
+    def visDensity(self, suptitle=None):
+        ncuts = 3
+        f, ax = plt.subplots(ncuts,ncuts)
+        nsel = np.ceil(len(self.edges[0])/(ncuts**2))
 
-    def vismodel(self):
+        dbins = [self.edges[0][i] for i in range(len(self.edges[0])) if (i%nsel)==0]
+        print(dbins)
+        print(nsel)
+        print(len(self.edges[0]))
+
+
+
+        for i,d in enumerate(dbins):
+            if i==(len(dbins)-1): continue
+            xii = np.where((dbins[i]<=self.X[:,0]) & (self.X[:,0]<dbins[i+1]))
+            dens = self.y[xii]
+
+            ax[i/ncuts,i%ncuts].set_xscale("log", nonposx='clip')
+            ax[i/ncuts,i%ncuts].plot(self.X[xii][:,1],dens)
+            ax[i/ncuts,i%ncuts].set_title('Density = {0:.2f}'.format(d))
+
+        plt.tight_layout()
+
+        if suptitle!=None:
+            plt.subplots_adjust(top=0.85)            
+            f.suptitle(suptitle)
+
+
+    def visModel(self, suptitle=None):
 
         ncuts = 3
         f, ax = plt.subplots(ncuts,ncuts)
@@ -234,6 +257,9 @@ class HistGauss(Model):
             ax[i/ncuts,i%ncuts].set_title('Density = {0:.2f}'.format(d))
             plt.legend()
 
+        if suptitle!=None:
+            f.suptitle(suptitle)
+
         plt.tight_layout()
         
         
@@ -246,7 +272,11 @@ class RF(Model):
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=0.5, random_state=0)
 
         if cv!=None:
-            pass
+            param_grid = {'n_estimators': [5, 10, 20, 40], 'max_features': ['sqrt']}
+            scorer = make_scorer(r2_score)
+            rndf = ensemble.RandomForestRegressor()
+            reg = GridSearchCV(rndf,param_grid,cv=cv,scoring=scorer,n_jobs=-1)
+            reg.fit(self.X_train, self.y_train)
         else:
             try:
                 reg = ensemble.RandomForestRegressor(n_jobs=-1)
@@ -270,7 +300,7 @@ class RF(Model):
         return self.reg.predict(fvec)
         
 
-    def vismodel(self):
+    def visModel(self):
 
         f, ax = plt.subplots(2)
         ax[0].set_yscale('log', nonposy='clip')
@@ -279,9 +309,7 @@ class RF(Model):
         pred = self.reg.predict(self.X_test)
         
         nii = np.random.choice(np.arange(len(pred)), 10000, replace=False)
-        ii0 = np.where((self.X_test[nii]>0) & (pred[nii]>0))
-        ii1 = np.where((self.X_test[nii]>0) & (self.y_test[nii]>0))
-        sns.kdeplot(self.X_test[nii][ii0].ravel(),pred[nii][ii0],label='Prediction',ax=ax[0])
-        sns.kdeplot(self.X_test[nii][ii1].ravel(),self.y_test[nii][ii1], label='Truth', ax=ax[1])
+        sns.kdeplot(self.X_test[nii].ravel(),pred[nii],label='Prediction',ax=ax[0])
+        sns.kdeplot(self.X_test[nii].ravel(),self.y_test[nii], label='Truth', ax=ax[1])
         plt.legend()
 
