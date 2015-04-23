@@ -9,6 +9,7 @@ from sklearn.cross_validation import train_test_split
 from sklearn.metrics import r2_score, make_scorer
 from abc import ABCMeta, abstractmethod
 from random import random
+from astroML.density_estimation import bayesian_blocks
 import seaborn as sns
 sns.set_context("talk")
 sns.despine(left=True)
@@ -80,21 +81,26 @@ class HistGauss(Model):
         self.preproc_hist()
         
     
-    def preproc_hist(self, ranges=None, nbins=100, normed=True):
+    def preproc_hist(self, normed=True):
         """
         Create a histogram from the feature data and data to predict
         
         """
         arrays = [self.hfeatures, self.pred]
         histarray = munge.join_rec_arrays(arrays)
+        histarray = histarray.view((np.float, len(histarray.dtype.names)))
 
-        counts, edges = np.histogramdd(histarray.view((np.float, len(histarray.dtype.names))),\
-                                                        range=ranges, bins=nbins, normed=normed)
+        bins = adaptive_binning(histarray)
+        counts, edges = np.histogramdd(histarray, bins=bins, normed=normed)
 
-        self.edges = edges
+        self.edges = bins
         centers = [[(edges[i][j]+edges[i][j+1])/2 for j in range(len(edges[i])-1)] for i in range(len(edges))]
-        self.X = np.ndarray((nbins**len(centers),len(centers)))
-        self.y = np.ndarray((nbins**len(centers)))
+
+        npts = 0
+        for i in range(len(centers)):
+            npts*=len(centers[i])
+
+        self.X = np.ndarray((npts,len(centers)))
         self.y = counts.flatten()
         
         temp = np.meshgrid(*centers)
@@ -103,6 +109,21 @@ class HistGauss(Model):
         
         self.hfeatures = None
         self.pred = None
+
+        
+    def adaptive_binning(self, histarray):
+        """
+        Calculate optimal bin edges for density histogram using adaptive bayesian blocks 
+        """
+        
+        bins = []
+
+        for i in range(len(histarray.shape)):
+            t = random.sample(histarray[:,i],100000)
+            b = bayesian_blocks(t)
+            bins.append(b)
+
+        return bins
         
         
 
