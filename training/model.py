@@ -25,11 +25,14 @@ class Model:
 
     def __init__(self, hfeatures, pfeatures, pred, pmod=None):
 
+        #If no pickle file provided, use features to construct object
         if pmod==None:
             self.hfeatures = hfeatures
             self.pfeatures = pfeatures
             self.pred = pred
-
+            self.pred_dtype = pred.dtype
+            self.feat_dtype = pfeatures.dtype
+            
         else:
             raise NotImplementedError
             
@@ -86,7 +89,6 @@ class Model:
         
 class HistGauss(Model):
 
-
     def preprocess(self):
         """
         Preprocess the data that we will fit the model to
@@ -94,7 +96,6 @@ class HistGauss(Model):
         """
         self.preproc_hist()
         
-    
     def preproc_hist(self, normed=True):
         """
         Create a histogram from the feature data and data to predict
@@ -124,7 +125,6 @@ class HistGauss(Model):
         self.hfeatures = None
         self.pred = None
 
-        
     def adaptive_binning(self, histarray):
         """
         Calculate optimal bin edges for density histogram using adaptive bayesian blocks 
@@ -141,7 +141,6 @@ class HistGauss(Model):
             bins.append(b)
 
         return bins
-        
         
     def train(self, cv=None):
         """
@@ -175,7 +174,6 @@ class HistGauss(Model):
         self.reg = reg
         self.integrate_gp()
         #self.feature_dist()
-
     
     def select_train_test(self):
         """
@@ -183,7 +181,6 @@ class HistGauss(Model):
         """
         pass
         
-    
     def integrate_gp(self):
         """
         Integrate the GP to get CDF of parameter we want to predict
@@ -206,7 +203,6 @@ class HistGauss(Model):
         #self.cdf = self.cdf/self.cdf[:,-1]
         self.cdfgrid = grid
 
-
     def predict(self, fvec):
         """
         Use uniform random distribution to sample distribution fit by GP
@@ -226,7 +222,6 @@ class HistGauss(Model):
 
         return self.centers[-1][mii]
         
-
     def visDensity(self, suptitle=None):
         ncuts = 3
         f, ax = plt.subplots(ncuts,ncuts)
@@ -252,7 +247,6 @@ class HistGauss(Model):
             plt.subplots_adjust(top=0.85)            
             f.suptitle(suptitle)
 
-
     def visModel(self, suptitle=None):
 
         ncuts = 3
@@ -277,7 +271,6 @@ class HistGauss(Model):
         plt.tight_layout()
         
         
-
 class RF(Model):
 
     def train(self, cv=None):
@@ -302,18 +295,15 @@ class RF(Model):
 
         self.reg = reg
 
-
     def preprocess(self):
         """                                                                                                                                                               Clean the data                                                                                                                                                    """
         self.X = np.atleast_2d(self.hfeatures['delta']).T
         self.y = self.pred['M200b']
 
-
     def predict(self, fvec):
         """                                                                                                                                                               Use the model to predict values using the provided feature vector                                                                                                 """
         
         return self.reg.predict(fvec)
-
 
     def visModel(self):
 
@@ -329,9 +319,7 @@ class RF(Model):
         plt.legend()
 
 
-
 class KDE(Model):
-    
     
     def preprocess(self):
 
@@ -356,7 +344,6 @@ class KDE(Model):
         for i in range(len(centers)):
             self.X[:,i] = temp[i].flatten()
 
-
     def train(self, cv=None):
 
         self.hist_train, self.hist_test = train_test_split(self.histarray, test_size=0.5, random_state=0)
@@ -372,7 +359,6 @@ class KDE(Model):
             param_grid = {'bandwidth':np.logspace(1,12,10)}
             kde = GridSearchCV(KernelDensity(),param_grid,cv=cv)
             kde.fit(self.hist_train)
-
 
     def visModel(self, suptitle=None):
 
@@ -399,7 +385,6 @@ class KDE(Model):
 
         plt.tight_layout()
 
-    
     def predict(self):
         pass
 
