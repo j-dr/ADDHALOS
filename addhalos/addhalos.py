@@ -5,14 +5,7 @@ import trainio
 import cPickle
 import argparse
 import haloio
-#import halo
 from bisect import bisect_left
-
-def readConfigFile():
-    """
-    Read in parameters from the parameter file
-    """
-    pass
 
 
 def addHalos(particles, features, model):
@@ -38,11 +31,11 @@ def addHalos(particles, features, model):
 def main(configfile):
     
     #Read in parameters from the configuration file
-    params = readConfigFile(configfile)
+    params = haloio.readConfigFile(configfile)
     
     #Load the particle locations/velocities and feature data
-    particles = tio.readParticles(params.particlepath)
-    features = tio.readData(params.featdata)
+    particles = trainio.readParticles(params.particlepath)
+    features = trainio.readData(params.featurepath)
 
     with open(params.modelpath, 'r') as fp:
         mdl = cPickle.load(fp)
@@ -50,8 +43,8 @@ def main(configfile):
     #Add the halos
     halos = addHalos(particles, features, mdl)
 
-    #TODO output halo data
-    haloio.printHalos(halos)
+    #Write the halos
+    fitsio.write(params.outpath, halos)
 
 
 if __name__=='__main__':
