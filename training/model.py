@@ -23,7 +23,7 @@ import pickle
 class Model:
     __metaclass__ = ABCMeta
 
-    def __init__(self, hfeatures, pfeatures, pred, pmod=None):
+    def __init__(self, hfeatures, pfeatures, pred, pmod=None, store=False):
 
         #If no pickle file provided, use features to construct object
         if pmod==None:
@@ -31,7 +31,8 @@ class Model:
             self.pfeatures = pfeatures
             self.pred = pred
             self.pred_dtype = pred.dtype
-            self.feat_dtype = pfeatures.dtype
+            self.feat_dtype = hfeatures.dtype
+            self.store=store
             
         else:
             raise NotImplementedError
@@ -94,7 +95,13 @@ class HistGauss(Model):
         Preprocess the data that we will fit the model to
 
         """
+        self.feature_dist()
         self.preproc_hist()
+
+        if self.store==True:
+            self.hfeatures=None
+            self.pfeatures=None
+            self.pred = None
         
     def preproc_hist(self, normed=True):
         """
@@ -118,12 +125,11 @@ class HistGauss(Model):
         self.X = np.ndarray((npts,len(centers)))
         self.y = counts.flatten()
         
+
         temp = np.meshgrid(*centers)
         for i in range(len(centers)):
             self.X[:,i] = temp[i].flatten()
         
-        self.hfeatures = None
-        self.pred = None
 
     def adaptive_binning(self, histarray):
         """
@@ -134,8 +140,8 @@ class HistGauss(Model):
 
         for i in range(len(histarray.shape)):
             #subsample the data to speed up adaptive binning
-            t = random.sample(histarray[:,i],100000)
-            #t = histarray[:,i]
+            #t = random.sample(histarray[:,i],100000)
+            t = histarray[:,i]
 
             b = bayesian_blocks(t)
             bins.append(b)
@@ -148,7 +154,6 @@ class HistGauss(Model):
 
         """
 
-        #Poisson fractional errors on histograms, hopefully won't screw with GP assumptions
         ii = np.where(self.y!=0)
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=0.5, random_state=0)
 
@@ -161,7 +166,7 @@ class HistGauss(Model):
             gp = gaussian_process.GaussianProcess()
             reg = GridSearchCV(gp,parameters,cv=cv,scoring=scorer)
         else:
-            reg = gaussian_process.GaussianProcess(theta0=[1e12,1], thetaL=[1e10,1e-1], thetaU=[1e14,1e1], nugget=1e-5)
+            reg = gaussian_process.GaussianProcess(theta0=[1e12,1], thetaL=[1e10,1e-2], thetaU=[1e14,1e1], nugget=1e-5)
 
         try:
             reg.fit(self.X_train, self.y_train)
@@ -174,6 +179,7 @@ class HistGauss(Model):
         self.reg = reg
         self.integrate_gp()
         #self.feature_dist()
+        
     
     def select_train_test(self):
         """
@@ -284,16 +290,22 @@ class RF(Model):
             rndf = ensemble.RandomForestRegressor()
             reg = GridSearchCV(rndf,param_grid,cv=cv,scoring=scorer,n_jobs=-1)
             reg.fit(self.X_train, self.y_train)
-            print('Fit successful')
         else:
             try:
-                reg = ensemble.RandomForestRegressor(n_jobs=-1)
+                reg = ensemble.RandomForestRegressor(n_estimators=20, n_jobs=-1)
                 reg.fit(self.X_train,self.y_train)
+                
             except Exception as e:
                 print(e)
                 print('*****Fit Failed*****')
-
+        
+        print('Fit successful')
         self.reg = reg
+
+        if self.store==True:
+            self.hfeatures = None
+            self.pfeatures = None
+            self.pred = None
 
     def preprocess(self):
         """                                                                                                                                                               Clean the data                                                                                                                                                    """

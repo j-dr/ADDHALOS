@@ -9,7 +9,7 @@ import trainio
 import matplotlib.pyplot as plt
 import cPickle
 
-def trainModel(hfeatdata, pfeatdata, preddata, modeltype='HistGauss', cv=None):
+def trainModel(hfeatdata, pfeatdata, preddata, modeltype='HistGauss', cv=None, store=False):
     """
     Given dictionaries with keys as paths, values as features to use,
     read in data and train the model.
@@ -21,29 +21,32 @@ def trainModel(hfeatdata, pfeatdata, preddata, modeltype='HistGauss', cv=None):
     pred = trainio.readData(preddata)
 
     print(len(hfeatures))
-    #print(len(pfeatures))
     print(len(pred))
     
     if modeltype=='HistGauss':
-        mod = model.HistGauss(hfeatures, pfeatures, pred)
+        mdl = model.HistGauss(hfeatures, pfeatures, pred, store=store)
     elif modeltype=='RF':
-        mod = model.RF(hfeatures, pfeatures, pred)
+        mdl = model.RF(hfeatures, pfeatures, pred, store=store)
     else:
         print("""Invalid model specification, please provide a valid model
                  for the modeltype keyword""")
 
-    mod.preprocess()
-    mod.train(cv=cv)
+    print('Preprocessing')
+    mdl.preprocess()
+
+    #mdl.visDensity()
+
+    print('Training')
+    mdl.train(cv=cv)
     
-    return mod
+    return mdl
 
 
 
 if __name__ == "__main__":    
-    mt='GP'
-    hfeatpath = '/nfs/slac/g/ki/ki22/cosmo/jderose/halos/calcrnn/output/FLb400/snapdir099/rnn_hlist_99'
-    #pfeatpath = '/nfs/slac/g/ki/ki22/cosmo/jderose/halos/calcrnn/output/FLb400/snapdir099/parts/*rnn*snapshot_downsample_099.[0-5]'
-    pfeatpath='None'
+    mt='RF'
+    hfeatpath = '/nfs/slac/g/ki/ki22/cosmo/jderose/halos/calcrnn/output/FLb400/snapdir010/rnn_hlist_10'
+    pfeatpath = '/nfs/slac/g/ki/ki22/cosmo/jderose/halos/calcrnn/output/FLb400/snapdir010/parts/*rnn*snapshot_downsample_010.[0-5]'
     predpath = '/nfs/slac/g/ki/ki21/cosmo/jderose/halos/rockstar/output/FLb400/hlists/hlist_99.list'
     
 
@@ -52,17 +55,20 @@ if __name__ == "__main__":
     preddata = {predpath:'M200b'}
     
     if mt=='RF':
-        mod = trainModel(hfeatdata, pfeatdata, preddata, modeltype='RF')
-        mod.vismodel()
-        plt.savefig('train_tests/rf_hlist_99.png')
-        with open('train_tests/rf_99.p', 'w') as fp:
-            cPickle.dump(mod,fp)
+        #mdl = trainModel(hfeatdata, pfeatdata, preddata, modeltype='RF', cv=3)
+        mdl = trainModel(hfeatdata, pfeatdata, preddata, modeltype='RF', store=True)
+        print('visualizing')
+        mdl.visModel()
+        plt.savefig('train_tests/rf_hlist_99_nocv.png')
+        with open('train_tests/rf_99_nocv.p', 'w') as fp:
+            cPickle.dump(mdl,fp)
     else:
-        mod = trainModel(hfeatdata, pfeatdata, preddata)
-        mod.vismodel()
-        plt.savefig('train_tests/gp_hlist_99.1.png')
-        with open('train_tests/gp_99.p', 'w') as fp:
-            cPickle.dump(mod,fp)
+        mdl = trainModel(hfeatdata, pfeatdata, preddata)
+        print('visualizing')
+        mdl.visModel()
+        plt.savefig('train_tests/abgp_hlist_99.png')
+        with open('train_tests/abgp_99.p', 'w') as fp:
+            cPickle.dump(mdl,fp)
     
 
 
