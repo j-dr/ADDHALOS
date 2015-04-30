@@ -4,6 +4,7 @@ import os
 import struct
 import itertools
 import pynbody as pnb
+import collections
 from glob import glob
 
 def readPartRnn(filepath):
@@ -16,7 +17,7 @@ def readPartRnn(filepath):
     with open(filepath) as fp:
         bytes = fp.read(4*4)
         head = struct.unpack('iiii', bytes)
-        dtype = np.dtype([('delta', np.float)])
+        dtype = np.dtype([('pdelta', np.float)])
         delta = np.fromfile(fp, dtype=dtype)
 
     return delta
@@ -29,11 +30,9 @@ def readHaloRnn(filepath):
 
     """
     
-    dtype = np.dtype([('id', int), ('delta', np.float64)])
+    dtype = np.dtype([('id', int), ('hdelta', np.float)])
     delta = np.genfromtxt(filepath, dtype=dtype)
     delta = delta[delta['id']!=0]
-    #u, uind = np.unique(delta['id'], return_index=True)
-    #delta = delta[uind]
     return delta
     
 
@@ -73,8 +72,6 @@ def readHlist(filepath):
     halos = np.genfromtxt(filepath,dtype=dtype,usecols=usecols)
     print(len(halos[halos['id']==0]))
     halos = halos[halos['id']!=0]
-    #u, uind = np.unique(halos['id'], return_index=True)
-    #halos = halos[uind]
 
     return halos
 
@@ -89,7 +86,16 @@ def readGadgetParticles(filepath):
 
     return parts
 
-    
+def flatten(l):
+    """
+    Flatten a nested list
+    """
+    for el in l:
+        if isinstance(el, collections.Iterable) and not isinstance(el, basestring):
+            for sub in flatten(el):
+                yield sub
+        else:
+            yield el
 
 def readData(indict):
     """
@@ -101,29 +107,15 @@ def readData(indict):
     """
 
     paths = indict.keys()
-
-    if len(paths)==1:
-        feats = indict.values()
-    else:
-        feats = [f for f in itertools.chain(*indict.values())]
-
-    dtype = np.dtype([(f, np.float) for f in feats])
-    print(dtype)
+    feats = [f for f in flatten(indict.values())]
+    dt = np.dtype([(f, np.float) for f in feats])
 
     for i, path in enumerate(paths):
-        if ('rnn' in path) and ('hlist' in path):
+        #Check to see what type of reader we need
+        if 'hdelta' in indict[path]:
             d = readHaloRnn(path)
-        elif ('rnn' in path) and ('snapshot' in path):
-            if '*' in path:
-                files = glob(path)
-                for j,f in enumerate(files):
-                    if j==0:
-                        d = readPartRnn(f)
-                    else:
-                        gd = readPartRnn(f)
-                        d = np.hstack((d,gd))
-            else:
-                d = readParticleRnn(path)
+        elif 'pdelta' in indict[path]:
+            d = readPartRnn(path)
         elif 'hlist' in path:
             d = readHlist(path)
         else:
@@ -133,10 +125,16 @@ def readData(indict):
             return None
 
         if i==0:
-            data = np.ndarray(len(d),dtype=dtype)
-            
-        data[indict[path]] = d[indict[path]]
+            data = np.ndarray(len(d),dtype=dt)
+            data_view = data.view(np.float).reshape(len(data), -1)
+        
+        #Add data from this path to the rec array
+        #have to use views to change multiple columns of 
+        #rec array
+        ii = np.ndarray(len(indict[path]), dtype=int)
+        for i in range(len(ii)):
+            ii[i] = np.where(np.array(dt.names)==indict[path][i])[0][0]
+        
+        data_view[:,ii] = d[indict[path]].view(np.float).reshape(len(d),-1)
         
     return data
-                  
-
