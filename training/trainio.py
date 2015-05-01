@@ -14,11 +14,17 @@ def readPartRnn(filepath):
 
     """
     
-    with open(filepath) as fp:
-        bytes = fp.read(4*4)
-        head = struct.unpack('iiii', bytes)
-        dtype = np.dtype([('pdelta', np.float)])
-        delta = np.fromfile(fp, dtype=dtype)
+    with open(filepath, 'rb') as fp:
+        #read header
+        bytes = fp.read(4*6)
+        head = struct.unpack('iiiiii', bytes)
+
+        #read in densities
+        bytes = fp.read()
+        delta = struct.unpack('{0}f'.format(head[1]), bytes)
+        dtype = np.dtype([('pdelta', float)])
+        delta = np.array(delta[:-1])
+        delta.dtype = dtype
 
     return delta
 
@@ -115,7 +121,16 @@ def readData(indict):
         if 'hdelta' in indict[path]:
             d = readHaloRnn(path)
         elif 'pdelta' in indict[path]:
-            d = readPartRnn(path)
+            if '*' in path:
+                files = glob(path)
+                for j,f in enumerate(files):
+                    if j==0:
+                        d = readPartRnn(f)
+                    else:
+                        gd = readPartRnn(f)
+                        d = np.hstack((d,gd))
+            else:
+                d = readPartRnn(path)
         elif 'hlist' in path:
             d = readHlist(path)
         else:
