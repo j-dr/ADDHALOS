@@ -1,4 +1,7 @@
 from __future__ import print_function, division
+if __name__=='__main__':
+    import matplotlib as mpl
+    mpl.use('Agg')
 import model
 import random
 import trainio
@@ -18,6 +21,7 @@ def addHalos(particles, features, mdl):
     t = [sv[0] for sv in v]
     hdt = np.dtype(zip(n,t))
     halos = np.ndarray(len(particles),dtype=hdt)
+    hpred = np.ndarray(len(particles),dtype=mdl.pred_dtype)
     hfeat = np.ndarray(len(particles),dtype=features.dtype)
     hpart = np.ndarray(len(particles),dtype=particles.dtype)
 
@@ -25,9 +29,6 @@ def addHalos(particles, features, mdl):
     ml = list(mdl.pred_dtype.names)
     fl = list(features.dtype.names)
     pl = list(particles.dtype.names)
-    print(ml)
-    print(fl)
-    print(pl)
     ii = np.ndarray(features.shape[1], dtype=int)
     count = 0
     for i,p in enumerate(particles):
@@ -39,14 +40,32 @@ def addHalos(particles, features, mdl):
                 bi = len(mdl.edges[j])-2
 
             ii[j] = bi
-            
+    
+        #If random draw less than probability of assigning
+        #halo to particle with this feature vector then
+        #assign halo
         draw = random.random()
         if draw<=mdl.php[ii]:
-            halos[ml][count] = mdl.predict(features[i,:])
-            halos[fl][count] = features[i,j]
-            halos[pl][count] = p
+            hpred[count] = mdl.predict(features[i,:])
+            hfeat[count] = features[i,j]
+            hpart[count] = p
             count+=1
 
+    halos['PX'] = hpart['PX']
+    halos['PY'] = hpart['PY']
+    halos['PZ'] = hpart['PZ']
+    halos['VX'] = hpart['VX']
+    halos['VY'] = hpart['VY']
+    halos['VZ'] = hpart['VZ']
+    halos['ID'] = hpart['ID']
+
+    for n in fl:
+        halos[n] = hfeat[n]
+        
+    for n in ml:
+        halos[n] = hpred[n]
+    
+        
     halos = halos[:count]
     return halos
             
@@ -58,11 +77,7 @@ def main(configfile):
 
     with open(params.modelpath, 'r') as fp:
         mdl = pickle.load(fp)
-        try:
-            mdl.reg.n_jobs = -1
-        except:
-            print('can\'t set n_jobs')
-    
+
     #Load the particle locations/velocities and feature data
     for pp in params.pplist:
         particles = trainio.readGadgetParticles(pp)
@@ -76,11 +91,26 @@ def main(configfile):
         pps = pp.split('/')
         op = params.outpath+'{0}.halo'.format(pps[-1])
         fitsio.write(op, halos)
+        
+    if combine==True:
+        gpath = params.outpath+'*.halo'
+        cpath = params.outpath+'/out0.list'
+        combineHalos(hpath, cpath)
 
 
+def combineHalos(globpath, outpath):
+    
+    files = glob(globpath)
+    fits = fitsio.FITS(outpath)
+    for f in files:
+        h = fitsio.read(h, ext=1)
+        fits[1].write(h)
+        
 if __name__=='__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('config', type=str, help='Path to the config file')
-
+    args = parser.parse_args()
+    print(args.config)
+    main(args.config)
     
