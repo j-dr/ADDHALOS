@@ -95,8 +95,8 @@ class HistGauss(Model):
         Preprocess the data that we will fit the model to
 
         """
-        self.feature_dist()
         self.preproc_hist()
+        self.feature_dist()
 
         if self.store==True:
             self.hfeatures=None
@@ -292,7 +292,7 @@ class RF(Model):
             reg.fit(self.X_train, self.y_train)
         else:
             try:
-                reg = ensemble.RandomForestRegressor(n_estimators=20, n_jobs=-1)
+                reg = ensemble.RandomForestRegressor(n_estimators=20)
                 reg.fit(self.X_train,self.y_train)
                 
             except Exception as e:
@@ -306,11 +306,23 @@ class RF(Model):
             self.hfeatures = None
             self.pfeatures = None
             self.pred = None
+            
+    def binedges(self):
+        """
+        Calculate feature bin edges for feature distribution calculation
+        """
+        arrays = [self.hfeatures, self.pred]
+        histarray = munge.join_rec_arrays(arrays)
+        histarray = histarray.view((np.float, len(histarray.dtype.names)))
+        counts, edges = np.histogramdd(histarray,bins=100)
+        self.edges = edges
 
     def preprocess(self):
         """                                                                                                                                                               Clean the data                                                                                                                                                    """
-        self.X = np.atleast_2d(self.hfeatures['delta']).T
+        self.X = np.atleast_2d(self.hfeatures['hdelta']).T
         self.y = self.pred['M200b']
+        self.binedges()
+        self.feature_dist()
 
     def predict(self, fvec):
         """                                                                                                                                                               Use the model to predict values using the provided feature vector                                                                                                 """

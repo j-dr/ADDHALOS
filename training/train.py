@@ -46,21 +46,20 @@ def trainModel(hfeatdata, pfeatdata, preddata, modeltype='HistGauss', cv=None, s
 if __name__ == "__main__":    
     mt='RF'
     hfeatpath = '/nfs/slac/g/ki/ki22/cosmo/jderose/halos/calcrnn/output/FLb400/snapdir010/rnn_hlist_10'
-    pfeatpath = '/nfs/slac/g/ki/ki22/cosmo/jderose/halos/calcrnn/output/FLb400/snapdir010/parts/*rnn*snapshot_downsample_010.[0-5]'
-    predpath = '/nfs/slac/g/ki/ki21/cosmo/jderose/halos/rockstar/output/FLb400/hlists/hlist_99.list'
+    pfeatpath = '/nfs/slac/g/ki/ki22/cosmo/jderose/halos/calcrnn/output/FLb400/snapdir010/parts/*rnn*snapshot_downsample_010.*'
+    predpath = '/nfs/slac/g/ki/ki21/cosmo/jderose/halos/rockstar/output/FLb400/hlists/hlist_10.list'
     
-
-    hfeatdata = {hfeatpath:'delta'}
-    pfeatdata = {pfeatpath:'delta'}
-    preddata = {predpath:'M200b'}
+    hfeatdata = {hfeatpath:['hdelta']}
+    pfeatdata = {pfeatpath:['pdelta']}
+    preddata = {predpath:['M200b']}
     
     if mt=='RF':
         #mdl = trainModel(hfeatdata, pfeatdata, preddata, modeltype='RF', cv=3)
         mdl = trainModel(hfeatdata, pfeatdata, preddata, modeltype='RF', store=True)
         print('visualizing')
         mdl.visModel()
-        plt.savefig('train_tests/rf_hlist_99_nocv.png')
-        with open('train_tests/rf_99_nocv.p', 'w') as fp:
+        plt.savefig('train_tests/rf_hlist_10.png')
+        with open('train_tests/rf_10.p', 'w') as fp:
             cPickle.dump(mdl,fp)
     else:
         mdl = trainModel(hfeatdata, pfeatdata, preddata)

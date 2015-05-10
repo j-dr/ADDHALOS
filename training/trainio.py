@@ -16,14 +16,15 @@ def readPartRnn(filepath):
     
     with open(filepath, 'rb') as fp:
         #read header
-        bytes = fp.read(4*6)
-        head = struct.unpack('iiiiii', bytes)
-
+        bytes = fp.read(4*5)
+        head = struct.unpack('iiiii', bytes)
+        print(head)
         #read in densities
         bytes = fp.read()
-        delta = struct.unpack('{0}f'.format(head[1]), bytes)
+        delta = struct.unpack('{0}f'.format(head[1]), bytes[:-4])
         dtype = np.dtype([('pdelta', float)])
-        delta = np.array(delta[:-1])
+        #delta = np.array(delta[:-1])
+        delta = np.array(delta)
         delta.dtype = dtype
 
     return delta
@@ -88,8 +89,11 @@ def readGadgetParticles(filepath):
     """
 
     s = pnb.load(filepath)
+    dt = np.dtype([('ID',int), \
+                   ('PX',float), ('PY',float), ('PZ',float),\
+                   ('VX',float), ('VY',float), ('VZ',float)])
     parts = np.hstack((np.atleast_2d(np.array(s['iord'])).T, np.array(s['pos']), np.array(s['vel'])))
-
+    parts.dtype = dt
     return parts
 
 def flatten(l):

@@ -11,6 +11,7 @@ import haloio
 import fitsio
 import numpy as np
 from bisect import bisect_left
+from glob import glob
 
 
 def addHalos(particles, features, mdl):
@@ -93,7 +94,7 @@ def main(configfile):
         fitsio.write(op, halos)
         
     if combine==True:
-        gpath = params.outpath+'*.halo'
+        hpath = params.outpath+'*.halo'
         cpath = params.outpath+'/out0.list'
         combineHalos(hpath, cpath)
 
@@ -101,10 +102,16 @@ def main(configfile):
 def combineHalos(globpath, outpath):
     
     files = glob(globpath)
-    fits = fitsio.FITS(outpath)
-    for f in files:
-        h = fitsio.read(h, ext=1)
-        fits[1].write(h)
+    fits = fitsio.FITS(outpath, 'rw', vstorage='object')
+    for i, f in enumerate(files):
+        h = fitsio.read(f, ext=1)
+        fits.update_hdu_list()
+        if len(fits.hdu_list)<2:
+            fits.write(h)
+        else:
+            fits[-1].append(h)
+
+    fits.close()
         
 if __name__=='__main__':
 

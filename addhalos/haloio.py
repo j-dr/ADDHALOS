@@ -9,6 +9,67 @@ class Config:
         for key in pdict.keys():
             setattr(self,key,pdict[key])
 
+        self.getParticlePaths()
+        self.getFeaturePaths()
+
+    def getParticlePaths(self):
+        """
+        Read in the paths to the particle files from the 
+        file pointed to by particlePath
+        """
+        self.pplist = []
+
+        with open(self.particlepath,'r') as fp:
+
+            while True:
+                p = fp.readline()
+                p = p.strip()
+                if p=='':
+                    break
+
+                self.pplist.append(p)
+
+    def getFeaturePaths(self):
+        """
+        Pair feature paths with the feature names to be
+        read in from them
+        """
+        paths = []
+        features = []
+        self.featuredict = {}
+        
+        with open(self.featurepath,'r') as fp:
+            
+            for i in range(len(self.pplist)):
+                for j in range(len(self.nfeatures)):
+                    p = fp.readline()
+                    p = p.strip()
+                    ps = p.split()
+                    if len(ps)!=2:
+                        print("Incorrectly formatted feature file!\n "\
+                              "Please make sure number of columns==2\n "\
+                              "and total number of files is equal to\n "\
+                              "Number of features * Number of paths in\n "\
+                              "particlepath")
+                        raise
+
+                    paths.append(ps[0])
+                    features.append(ps[1])
+                
+                temp = {}
+                for j in range(len(paths)):
+                    if paths[j] not in temp.keys():
+                        print(paths[j])
+                        temp.update({paths[j]:[features[j]]})
+                    else:
+                        temp[paths[j]].append(features[j])
+
+                self.featuredict.update({self.pplist[i]:temp})
+                
+                paths = []
+                features = []
+
+
 
 def readConfigFile(fname):
     
