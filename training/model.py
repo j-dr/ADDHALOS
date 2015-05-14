@@ -87,50 +87,6 @@ class Model:
         else:
             return False
 
-        
-class HistGauss(Model):
-
-    def preprocess(self):
-        """
-        Preprocess the data that we will fit the model to
-
-        """
-        self.preproc_hist()
-        self.feature_dist()
-
-        if self.store==True:
-            self.hfeatures=None
-            self.pfeatures=None
-            self.pred = None
-        
-    def preproc_hist(self, normed=True):
-        """
-        Create a histogram from the feature data and data to predict
-        
-        """
-        arrays = [self.hfeatures, self.pred]
-        histarray = munge.join_rec_arrays(arrays)
-        histarray = histarray.view((np.float, len(histarray.dtype.names)))
-
-        bins = self.adaptive_binning(histarray)
-        counts, edges = np.histogramdd(histarray, bins=bins, normed=normed)
-
-        self.edges = bins
-        centers = [[(edges[i][j]+edges[i][j+1])/2 for j in range(len(edges[i])-1)] for i in range(len(edges))]
-
-        npts = 1
-        for i in range(len(centers)):
-            npts*=len(centers[i])
-
-        self.X = np.ndarray((npts,len(centers)))
-        self.y = counts.flatten()
-        
-
-        temp = np.meshgrid(*centers)
-        for i in range(len(centers)):
-            self.X[:,i] = temp[i].flatten()
-        
-
     def adaptive_binning(self, histarray):
         """
         Calculate optimal bin edges for density histogram using adaptive bayesian blocks 
@@ -147,6 +103,84 @@ class HistGauss(Model):
             bins.append(b)
 
         return bins
+
+    def histogram(self, histarray, normed=True):
+        """
+        Create a histogram using the provided array
+        
+        """
+
+        bins = self.adaptive_binning(histarray)
+        counts, edges = np.histogramdd(histarray, bins=bins, normed=normed)
+
+        edges = bins
+        centers = [[(edges[i][j]+edges[i][j+1])/2 for j in range(len(edges[i])-1)] for i in range(len(edges))]
+
+        npts = 1
+        for i in range(len(centers)):
+            npts*=len(centers[i])
+
+        X = np.ndarray((npts,len(centers)))
+        y = counts.flatten()
+        
+
+        temp = np.meshgrid(*centers)
+        for i in range(len(centers)):
+            X[:,i] = temp[i].flatten()
+
+        return X, y, edges
+
+    def visDensity(self, X, d, nslices=3, f=None, ax=None, label=None, suptitle=None):
+
+        if nslices!=None:
+            sX = np.sort(np.unique(X[0,:]))
+            dbins = np.logspace(np.log10(sX[0,0]), np.log10(sX[-1,0]), num=nslices**2)
+        else:
+            dbins = X[:,0]
+            
+        if (f==None) and (ax==None):
+            f, ax = plt.subplots(ncuts,ncuts)
+
+        for i, d in enumerate(dbins):
+            if i==(len(dbins)-1): continue
+            xii = np.where((dbins[i]<=X[:,0]) & (X[:,0]<dbins[i+1]))
+            dens = d[xii]
+
+            ax[i/ncuts,i%ncuts].set_xscale("log", nonposx='clip')
+            ax[i/ncuts,i%ncuts].plot(X[xii][:,1],dens,label=label)
+            ax[i/ncuts,i%ncuts].set_title('Density = {0:.2f}'.format(d))
+
+        plt.tight_layout()
+
+        if suptitle!=None:
+            plt.subplots_adjust(top=0.85)            
+            f.suptitle(suptitle)
+
+        return f, ax
+
+        
+class HistGauss(Model):
+
+    def preprocess(self):
+        """
+        Preprocess the data that we will fit the model to
+
+        """
+        self.preproc_hist()
+        self.feature_dist()
+
+        if self.store==True:
+            self.hfeatures=None
+            self.pfeatures=None
+            self.pred = None
+        
+    def preproc_hist(self):
+        
+        arrays = [self.hfeatures, self.pred]
+        histarray = munge.join_rec_arrays(arrays)
+        histarray = histarray.view((np.float, len(histarray.dtype.names)))        
+
+        self.X, self.y, self.edges = self.histogram(histarray, normed=True)
         
     def train(self, cv=None):
         """
@@ -180,7 +214,6 @@ class HistGauss(Model):
         self.integrate_gp()
         #self.feature_dist()
         
-    
     def select_train_test(self):
         """
         Sample data 'optimally', to reduce size of training set
@@ -314,7 +347,7 @@ class RF(Model):
         arrays = [self.hfeatures, self.pred]
         histarray = munge.join_rec_arrays(arrays)
         histarray = histarray.view((np.float, len(histarray.dtype.names)))
-        counts, edges = np.histogramdd(histarray,bins=100)
+        X, y, edges = self.histogram(histarray, normed=True)
         self.edges = edges
 
     def preprocess(self):
@@ -334,12 +367,18 @@ class RF(Model):
         f, ax = plt.subplots(2)
         pred = self.reg.predict(self.X_test)
 
-        print('Plotting fit')
-        nii = np.random.choice(np.arange(len(pred)), 10000, replace=False)
-        ii0, = np.where((pred[nii]==pred[nii]) & (pred[nii]!=0))
-        ii1, = np.where((self.y_test[nii]==self.y_test[nii]) & (self.y_test[nii]!=0))
-        sns.kdeplot(self.X_test[nii][ii0].ravel(),np.log10(pred[nii][ii0]),label='Prediction',ax=ax[0])
-        sns.kdeplot(self.X_test[nii][ii1].ravel(),np.log10(self.y_test[nii][ii1]), label='Truth', ax=ax[1])
+        arrays = [self.X_test, pred]
+        histarray = munge.join_rec_arrays(arrays)
+        histarray = histarray.view((np.float, len(histarray.dtype.names)))
+        X, y = self.histogram(histarray)
+        f, ax = self.visDensity(X, y, label='Pred')
+
+        arrays = [self.X_test, self.y_test]
+        histarray = munge.join_rec_arrays(arrays)
+        histarray = histarray.view((np.float, len(histarray.dtype.names)))
+        X, y = self.histogram(histarray)
+        f, ax = self.visDensity(X, y, f=f, ax=ax, label='Truth')
+
         plt.legend()
 
 
