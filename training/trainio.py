@@ -37,7 +37,7 @@ def readHaloRnn(filepath):
 
     """
     
-    dtype = np.dtype([('id', int), ('hdelta', np.float)])
+    dtype = np.dtype([('id', int), ('hdelta', float)])
     delta = np.genfromtxt(filepath, dtype=dtype)
     delta = delta[delta['id']!=0]
     return delta
@@ -58,17 +58,17 @@ def readHlist(filepath):
         print('Number of fields in hlist {0}: {1}'.format(filepath, nfields))
  
     if nfields == 66:
-        dtype = np.dtype([('scale',np.float64),('id',int),('mvir',np.float64),('rvir',np.float64),('rs',np.float64),\
-                              ('vrms',np.float64),('vmax',np.float64), ('Rs_Klypin',np.float64),('Mvir_all',np.float64),\
-                              ('M200b',np.float64),('M200c',np.float64),('M500c',np.float64),('M2500c',np.float64),\
-                              ('Macc',np.float64),('Mpeak',np.float64),('Vacc',np.float64),('Vpeak',np.float64)])
+        dtype = np.dtype([('scale',float),('id',int),('mvir',float),('rvir',float),('rs',float),\
+                              ('vrms',float),('vmax',float), ('Rs_Klypin',float),('Mvir_all',float),\
+                              ('M200b',float),('M200c',float),('M500c',float),('M2500c',float),\
+                              ('Macc',float),('Mpeak',float),('Vacc',float),('Vpeak',float)])
         usecols = [0,1,10,11,12,13,16,34,35,36,37,38,39,56,57,58,59]
     
     elif nfields == 67:
-        dtype = np.dtype([('scale',np.float64),('id',int),('mvir',np.float64),('rvir',np.float64),('rs',np.float64),\
-                              ('vrms',np.float64),('vmax',np.float64), ('Rs_Klypin',np.float64),('Mvir_all',np.float64),\
-                              ('M200b',np.float64),('M200c',np.float64),('M500c',np.float64),('M2500c',np.float64),\
-                              ('Macc',np.float64),('Mpeak',np.float64),('Vacc',np.float64),('Vpeak',np.float64)])
+        dtype = np.dtype([('scale',float),('id',int),('mvir',float),('rvir',float),('rs',float),\
+                              ('vrms',float),('vmax',float), ('Rs_Klypin',float),('Mvir_all',float),\
+                              ('M200b',float),('M200c',float),('M500c',float),('M2500c',float),\
+                              ('Macc',float),('Mpeak',float),('Vacc',float),('Vpeak',float)])
         usecols = [0,1,10,11,12,13,16,34,35,36,37,38,39,54,55,56,57]
     
     else:
@@ -118,7 +118,7 @@ def readData(indict):
 
     paths = indict.keys()
     feats = [f for f in flatten(indict.values())]
-    dt = np.dtype([(f, np.float) for f in feats])
+    dt = np.dtype([(f, float) for f in feats])
 
     for i, path in enumerate(paths):
         #Check to see what type of reader we need
@@ -145,7 +145,7 @@ def readData(indict):
 
         if i==0:
             data = np.ndarray(len(d),dtype=dt)
-            data_view = data.view(np.float).reshape(len(data), -1)
+            data_view = data.view(float).reshape(len(data), -1)
         
         #Add data from this path to the rec array
         #have to use views to change multiple columns of 

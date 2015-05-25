@@ -65,8 +65,8 @@ class Model:
 
     def feature_dist(self):
         
-        pcounts, e = np.histogramdd(self.pfeatures.view((np.float, len(self.pfeatures.dtype.names))), bins=self.edges[:-1])
-        hcounts, e = np.histogramdd(self.hfeatures.view((np.float, len(self.hfeatures.dtype.names))), bins=self.edges[:-1])
+        pcounts, e = np.histogramdd(self.pfeatures.view((np.float64, len(self.pfeatures.dtype.names))), bins=self.edges[:-1])
+        hcounts, e = np.histogramdd(self.hfeatures.view((np.float64, len(self.hfeatures.dtype.names))), bins=self.edges[:-1])
 
         #Probability that a halo is present at a particle with features in a particular bin of feature space
         #is the number of halos in that bin of feature space over the number of particles in that bin of 
@@ -312,7 +312,7 @@ class HistGauss(Model):
         
 class RF(Model):
 
-    def train(self, cv=None):
+    def train(self, cv=None, n_jobs=1):
         """                                                                                                                                                               Fit a predictive model to features and pred                                                                                                                       """
 
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=0.5, random_state=0)
@@ -321,11 +321,11 @@ class RF(Model):
             param_grid = {'n_estimators': [5, 10, 20, 40], 'max_features': ['sqrt']}
             scorer = make_scorer(r2_score)
             rndf = ensemble.RandomForestRegressor()
-            reg = GridSearchCV(rndf,param_grid,cv=cv,scoring=scorer,n_jobs=-1)
+            reg = GridSearchCV(rndf,param_grid,cv=cv,scoring=scorer,n_jobs=n_jobs)
             reg.fit(self.X_train, self.y_train)
         else:
             try:
-                reg = ensemble.RandomForestRegressor(n_estimators=20)
+                reg = ensemble.RandomForestRegressor(n_estimators=20, n_jobs=n_jobs)
                 reg.fit(self.X_train,self.y_train)
                 
             except Exception as e:
@@ -366,6 +366,7 @@ class RF(Model):
 
         f, ax = plt.subplots(2)
         pred = self.reg.predict(self.X_test)
+        pred.dtype = self.pred.dtype
 
         arrays = [self.X_test, pred]
         histarray = munge.join_rec_arrays(arrays)
