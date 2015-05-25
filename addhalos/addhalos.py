@@ -35,7 +35,7 @@ def addHalos(particles, features, mdl):
     for i,p in enumerate(particles):
         #Search for correct bin in feature space
         for j in range(len(ii)):
-            bi = bisect_left(mdl.edges[j], features[i,j])
+            bi = bisect_left(mdl.edges[j], features[i,j][0])
             #If higher than largest bin edge, set as last bin
             if bi>(len(mdl.edges[j])-2):
                 bi = len(mdl.edges[j])-2
@@ -48,7 +48,7 @@ def addHalos(particles, features, mdl):
         draw = random.random()
         if draw<=mdl.php[ii]:
             hpred[count] = mdl.predict(features[i,:])
-            hfeat[count] = features[i,j]
+            hfeat[count] = features[i,:].item()
             hpart[count] = p
             count+=1
 
@@ -71,7 +71,7 @@ def addHalos(particles, features, mdl):
     return halos
             
 
-def main(configfile):
+def main(configfile, combine=True):
     
     #Read in parameters from the configuration file
     params = haloio.readConfigFile(configfile)
