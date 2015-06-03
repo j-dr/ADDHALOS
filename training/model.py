@@ -63,7 +63,7 @@ class Model:
         """
         pass
 
-    def clean_pred(self, key):
+    def clean_pred(self, key='M200b'):
         """
         Get rid of zero mass entries in key
         """
@@ -235,12 +235,14 @@ class HistGauss(Model):
         
     def preproc_hist(self):
         
+        self.clean_pred()
         arrays = [self.hfeatures, self.pred]
         histarray = munge.join_rec_arrays(arrays)
         histarray = histarray.view((np.float, len(histarray.dtype.names)))        
 
         counts, edges = self.histogram(histarray, normed=True)
         self.X, self.y, self.edges = self.flattenHist(counts, edges)
+
         
     def train(self, cv=None):
         """
@@ -460,17 +462,17 @@ class pdfRF(Model):
             self.pred = None
         
     def preproc_hist(self):
-        
+        self.clean_pred()
         arrays = [self.hfeatures, self.pred]
         histarray = munge.join_rec_arrays(arrays)
         histarray = histarray.view((np.float, len(histarray.dtype.names)))        
 
-        pdf, edges = self.histogram(histarray, normed=True)
-        self.X, self.y = self.make_fvec(pdf, edges)
+        pdf, self.edges = self.histogram(histarray, normed=True)
+        self.X, self.y = self.make_fvec(pdf, self.edges)
 
-    def make_fvec(pdf, edges):
+    def make_fvec(self, pdf, edges):
 
-        centers = [[(edges[i][j]+edges[i][j+1])/2 for j in range(len(edges[i])-1)] for i in range(len(edges))]
+        centers = [[(edges[i][j]+edges[i][j+1])/2 for j in range(len(edges[i])-1)] for i in range(len(edges)-1)]
 
         npts = 1
         for i in range(len(centers)):
@@ -517,8 +519,8 @@ class pdfRF(Model):
             self.pred = None
 
     def predict(self, fvec):
-        pdf = reg.predict(fvec)
-        cdf = np.cumsum(pdf)
+        pdf = self.reg.predict(fvec)
+        cdf = np.cumsum(pdf*(self.edges[-1][1:]-self.edges[-1][:-1]))
         draw = random.random()
         ii = bisect_left(cdf,draw)
         
