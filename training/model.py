@@ -63,6 +63,15 @@ class Model:
         """
         pass
 
+    def clean_pred(self, key):
+        """
+        Get rid of zero mass entries in key
+        """
+
+        ii, = np.where(self.pred[key]!=0)
+        self.pred = self.pred[ii]
+        self.hfeatures = self.hfeatures[ii]
+
     def feature_dist(self):
         
         pcounts, e = np.histogramdd(self.pfeatures.view((np.float64, len(self.pfeatures.dtype.names))), bins=self.edges[:-1])
@@ -104,16 +113,60 @@ class Model:
 
         return bins
 
-    def histogram(self, histarray, normed=True):
+    def log_binning(self, histarray, dex):
+        """
+        Create log spaced bins for the array in histarray with
+        size dex. 
+
+        Inputs:
+        histarray, np.ndarray -- two dimensional array, whose
+        columns we wish to bin
+        
+        dex, np.ndarray or float -- one dimensional array or 
+        float with the size of the bins desired for each column
+        with length equal to the number of columns in histarray
+        or a float if same spacing for all cols
+
+        Outputs:
+        bins, list -- list of arrays, each one containing 
+        the bin edges for a column
+        """
+
+        cmin = np.min(histarray, axis=0)
+        cmax = np.max(histarray, axis=0)
+        nbins = np.ceil((np.log10(cmax)-np.log10(cmin))/dex)
+        print(nbins)
+        bins = [np.logspace(np.log10(cmin[i]), np.log10(cmax[i]), nbins[i]) for i in range(len(cmin))]
+
+        return bins
+
+    def histogram(self, histarray, normed=True, binning='log'):
         """
         Create a histogram using the provided array
-        
         """
 
-        bins = self.adaptive_binning(histarray)
+        if binning == 'log':
+            lstep = np.array([0.01,0.1])
+            bins = self.log_binning(histarray, lstep)
+        elif binning == 'adaptive':
+            bins = adaptive_binning(histarray)
+        else:
+            print('Binning type not understood, aborting!')
+            raise
+
+        print('bins: {0}'.format(bins))
+        print('histarray.shape: {0}'.format(histarray.shape))
+
         counts, edges = np.histogramdd(histarray, bins=bins, normed=normed)
 
-        edges = bins
+        return counts, bins
+
+    def flattenHist(counts, edges):
+        """
+        Given an array of counts, and the bin edges they correspond to 
+        flatten the edges into a m x n-features array and the counts
+        into a m x 1 array 
+        """
         centers = [[(edges[i][j]+edges[i][j+1])/2 for j in range(len(edges[i])-1)] for i in range(len(edges))]
 
         npts = 1
@@ -122,7 +175,6 @@ class Model:
 
         X = np.ndarray((npts,len(centers)))
         y = counts.flatten()
-        
 
         temp = np.meshgrid(*centers)
         for i in range(len(centers)):
@@ -130,25 +182,32 @@ class Model:
 
         return X, y, edges
 
+
     def visDensity(self, X, d, nslices=3, f=None, ax=None, label=None, suptitle=None):
 
         if nslices!=None:
-            sX = np.sort(np.unique(X[0,:]))
-            dbins = np.logspace(np.log10(sX[0,0]), np.log10(sX[-1,0]), num=nslices**2)
+            sX = np.sort(np.unique(X[:,0]))
+            step = np.ceil((sX.shape[0]+nslices-1)/nslices)
+            print(step)
+            dbins = sX[:step:]
+            #dbins = np.logspace(np.log10(sX[0]), np.log10(sX[-1]), num=nslices**2)
         else:
             dbins = X[:,0]
             
         if (f==None) and (ax==None):
-            f, ax = plt.subplots(ncuts,ncuts)
-
-        for i, d in enumerate(dbins):
+            f, ax = plt.subplots(nslices,nslices)
+        
+        print(dbins)
+        for i, db in enumerate(dbins):
             if i==(len(dbins)-1): continue
-            xii = np.where((dbins[i]<=X[:,0]) & (X[:,0]<dbins[i+1]))
+            #xii = np.where((dbins[i]<=X[:,0]) & (X[:,0]<dbins[i+1]))
+            xii = np.where(dbins[i]==X[:,0])
             dens = d[xii]
-
-            ax[i/ncuts,i%ncuts].set_xscale("log", nonposx='clip')
-            ax[i/ncuts,i%ncuts].plot(X[xii][:,1],dens,label=label)
-            ax[i/ncuts,i%ncuts].set_title('Density = {0:.2f}'.format(d))
+            widths = X[xii][:,1][1:]-X[xii][:,1][:-1]
+            print(widths)
+            ax[i/nslices,i%nslices].set_xscale("log", nonposx='clip')
+            ax[i/nslices,i%nslices].bar(X[xii][:,1][:-1],dens[:-1],width=widths,label=label)
+            ax[i/nslices,i%nslices].set_title('Density = {0:.2f}'.format(db))
 
         plt.tight_layout()
 
@@ -180,7 +239,8 @@ class HistGauss(Model):
         histarray = munge.join_rec_arrays(arrays)
         histarray = histarray.view((np.float, len(histarray.dtype.names)))        
 
-        self.X, self.y, self.edges = self.histogram(histarray, normed=True)
+        counts, edges = self.histogram(histarray, normed=True)
+        self.X, self.y, self.edges = self.flattenHist(counts, edges)
         
     def train(self, cv=None):
         """
@@ -347,18 +407,22 @@ class RF(Model):
         arrays = [self.hfeatures, self.pred]
         histarray = munge.join_rec_arrays(arrays)
         histarray = histarray.view((np.float, len(histarray.dtype.names)))
-        X, y, edges = self.histogram(histarray, normed=True)
+        counts, edges = self.histogram(histarray, normed=True)
+        X, y, edges = self.flattenHist(counts, edges)
         self.edges = edges
 
     def preprocess(self):
-        """                                                                                                                                                               Clean the data                                                                                                                                                    """
+        """
+        Clean the data
+        """
         self.X = np.atleast_2d(self.hfeatures['hdelta']).T
         self.y = self.pred['M200b']
         self.binedges()
         self.feature_dist()
 
     def predict(self, fvec):
-        """                                                                                                                                                               Use the model to predict values using the provided feature vector                                                                                                 """
+        """                                                                                                                                                               Use the model to predict values using the provided feature vector
+        """
         
         return self.reg.predict(fvec)
 
@@ -366,22 +430,119 @@ class RF(Model):
 
         f, ax = plt.subplots(2)
         pred = self.reg.predict(self.X_test)
-        pred.dtype = self.pred.dtype
 
-        arrays = [self.X_test, pred]
-        histarray = munge.join_rec_arrays(arrays)
-        histarray = histarray.view((np.float, len(histarray.dtype.names)))
-        X, y = self.histogram(histarray)
+        histarray = np.vstack((self.X_test.T, pred.T)).T
+        counts, edges = self.histogram(histarray)
+        X, y, edges = self.flattenHist(counts, edges)
         f, ax = self.visDensity(X, y, label='Pred')
 
-        arrays = [self.X_test, self.y_test]
-        histarray = munge.join_rec_arrays(arrays)
-        histarray = histarray.view((np.float, len(histarray.dtype.names)))
-        X, y = self.histogram(histarray)
+        histarray = np.vstack((self.X_test.T, self.y_test.T)).T
+        counts, edges = self.histogram(histarray)
+        X, y, edges = self.flattenHist(counts, edges)
         f, ax = self.visDensity(X, y, f=f, ax=ax, label='Truth')
 
         plt.legend()
 
+
+class pdfRF(Model):
+
+    def preprocess(self):
+        """
+        Preprocess the data that we will fit the model to
+
+        """
+        self.preproc_hist()
+        self.feature_dist()
+
+        if self.store==True:
+            self.hfeatures=None
+            self.pfeatures=None
+            self.pred = None
+        
+    def preproc_hist(self):
+        
+        arrays = [self.hfeatures, self.pred]
+        histarray = munge.join_rec_arrays(arrays)
+        histarray = histarray.view((np.float, len(histarray.dtype.names)))        
+
+        pdf, edges = self.histogram(histarray, normed=True)
+        self.X, self.y = self.make_fvec(pdf, edges)
+
+    def make_fvec(pdf, edges):
+
+        centers = [[(edges[i][j]+edges[i][j+1])/2 for j in range(len(edges[i])-1)] for i in range(len(edges))]
+
+        npts = 1
+        for i in range(len(centers)):
+            npts*=len(centers[i])
+
+        X = np.ndarray((npts,len(centers)))
+        y = pdf.reshape(np.product(pdf.shape[:-1]), pdf.shape[-1])
+
+        temp = np.meshgrid(*centers)
+        for i in range(len(centers)):
+            X[:,i] = temp[i].flatten()
+
+        return X, y
+
+    def train(self, cv=None, n_jobs=1):
+        """
+        Fit a predictive model to features and pred
+        """
+
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=0.5, random_state=0)
+
+        if cv!=None:
+            param_grid = {'n_estimators': [5, 10, 20, 40], 'max_features': ['sqrt']}
+            scorer = make_scorer(r2_score)
+            rndf = ensemble.RandomForestRegressor()
+            reg = GridSearchCV(rndf,param_grid,cv=cv,scoring=scorer,n_jobs=n_jobs)
+            reg.fit(self.X_train, self.y_train)
+        else:
+            try:
+                reg = ensemble.RandomForestRegressor(n_estimators=20, n_jobs=n_jobs)
+                reg.fit(self.X_train,self.y_train)
+                
+            except Exception as e:
+                print(e)
+                print('*****Fit Failed*****')
+                raise
+        
+        print('Fit successful')
+        self.reg = reg
+
+        if self.store==True:
+            self.hfeatures = None
+            self.pfeatures = None
+            self.pred = None
+
+    def predict(self, fvec):
+        pdf = reg.predict(fvec)
+        cdf = np.cumsum(pdf)
+        draw = random.random()
+        ii = bisect_left(cdf,draw)
+        
+        return self.edges[-1][ii]
+
+    def visModel(self):
+
+        f, ax = plt.subplots(2)
+        pred = self.reg.predict(self.X_test)
+
+        histarray = np.vstack((self.X_test.T, pred.T)).T
+        counts, edges = self.histogram(histarray)
+        X, y, edges = self.flattenHist(counts, edges)
+        f, ax = self.visDensity(X, y, label='Pred')
+
+        arrays = [self.hfeatures, self.pred]
+        histarray = munge.join_rec_arrays(arrays)
+        counts, edges = self.histogram(histarray)
+        X, y, edges = self.flattenHist(counts, edges)
+        f, ax = self.visDensity(X, y, f=f, ax=ax, label='Truth')
+
+        plt.legend()
+
+    
 
 class KDE(Model):
     
