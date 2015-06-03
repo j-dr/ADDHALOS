@@ -65,10 +65,10 @@ class Model:
 
     def clean_pred(self, key='M200b'):
         """
-        Get rid of zero mass entries in key
+        Get rid of zero mass and very low mass entries in key
         """
 
-        ii, = np.where(self.pred[key]!=0)
+        ii, = np.where((self.pred[key]!=0) & (self.pred[key]>1e10))
         self.pred = self.pred[ii]
         self.hfeatures = self.hfeatures[ii]
 
@@ -468,41 +468,36 @@ class pdfRF(Model):
         histarray = histarray.view((np.float, len(histarray.dtype.names)))        
 
         pdf, self.edges = self.histogram(histarray, normed=True)
-        self.X, self.y = self.make_fvec(pdf, self.edges)
+        self.X = np.atleast_2d(self.hfeatures.view((float, len(self.hfeatures[0])))).T
+        self.y = self.make_labels()
+        
 
-    def make_fvec(self, pdf, edges):
+    def make_labels(self):
+        self.classes = (self.edges[-1][:-1]+self.edges[-1][1:])/2
+        label = np.digitize(self.pred.view((np.float64, len(self.pred[0]))), self.edges[-1])
+        #move values outside of bins into first/last bins
+        label[label==len(self.edges[-1])] = len(self.edges[-1])-1
+        label -= 1
+        label[label<0] = 0
 
-        centers = [[(edges[i][j]+edges[i][j+1])/2 for j in range(len(edges[i])-1)] for i in range(len(edges)-1)]
-
-        npts = 1
-        for i in range(len(centers)):
-            npts*=len(centers[i])
-
-        X = np.ndarray((npts,len(centers)))
-        y = pdf.reshape(np.product(pdf.shape[:-1]), pdf.shape[-1])
-
-        temp = np.meshgrid(*centers)
-        for i in range(len(centers)):
-            X[:,i] = temp[i].flatten()
-
-        return X, y
+        return label
 
     def train(self, cv=None, n_jobs=1):
         """
         Fit a predictive model to features and pred
         """
 
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=0.5, random_state=0)
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=0.1, random_state=0)
 
         if cv!=None:
             param_grid = {'n_estimators': [5, 10, 20, 40], 'max_features': ['sqrt']}
             scorer = make_scorer(r2_score)
-            rndf = ensemble.RandomForestRegressor()
+            rndf = ensemble.RandomForestClassifier()
             reg = GridSearchCV(rndf,param_grid,cv=cv,scoring=scorer,n_jobs=n_jobs)
             reg.fit(self.X_train, self.y_train)
         else:
             try:
-                reg = ensemble.RandomForestRegressor(n_estimators=20, n_jobs=n_jobs)
+                reg = ensemble.RandomForestClassifier(n_estimators=20, n_jobs=n_jobs)
                 reg.fit(self.X_train,self.y_train)
                 
             except Exception as e:
@@ -520,11 +515,11 @@ class pdfRF(Model):
 
     def predict(self, fvec):
         pdf = self.reg.predict(fvec)
-        cdf = np.cumsum(pdf*(self.edges[-1][1:]-self.edges[-1][:-1]))
+        cdf = np.cumsum(pdf)
         draw = random.random()
         ii = bisect_left(cdf,draw)
         
-        return self.edges[-1][ii]
+        return self.classes[ii]
 
     def visModel(self):
 
