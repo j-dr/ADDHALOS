@@ -37,7 +37,6 @@ class Model:
         else:
             raise NotImplementedError
             
-            
 
     @abstractmethod
     def train(self):
@@ -146,7 +145,7 @@ class Model:
         """
 
         if binning == 'log':
-            lstep = np.array([0.01,0.1])
+            lstep = np.array([0.01,0.01])
             bins = self.log_binning(histarray, lstep)
         elif binning == 'adaptive':
             bins = adaptive_binning(histarray)
@@ -161,7 +160,7 @@ class Model:
 
         return counts, bins
 
-    def flattenHist(counts, edges):
+    def flattenHist(self, counts, edges):
         """
         Given an array of counts, and the bin edges they correspond to 
         flatten the edges into a m x n-features array and the counts
@@ -192,7 +191,8 @@ class Model:
             dbins = sX[:step:]
             #dbins = np.logspace(np.log10(sX[0]), np.log10(sX[-1]), num=nslices**2)
         else:
-            dbins = X[:,0]
+            dbins = np.unique(X[:,0])
+            nslices = len(dbins)
             
         if (f==None) and (ax==None):
             f, ax = plt.subplots(nslices,nslices)
@@ -468,10 +468,10 @@ class pdfRF(Model):
         histarray = histarray.view((np.float, len(histarray.dtype.names)))        
 
         pdf, self.edges = self.histogram(histarray, normed=True)
+        self.support, self.jpdf, self.edges = self.flattenHist(pdf, self.edges)
         self.X = np.atleast_2d(self.hfeatures.view((float, len(self.hfeatures[0])))).T
         self.y = self.make_labels()
         
-
     def make_labels(self):
         self.classes = (self.edges[-1][:-1]+self.edges[-1][1:])/2
         label = np.digitize(self.pred.view((np.float64, len(self.pred[0]))), self.edges[-1])
@@ -509,12 +509,12 @@ class pdfRF(Model):
         self.reg = reg
 
         if self.store==True:
-            self.hfeatures = None
-            self.pfeatures = None
+            self.X = None
+            self.y = None
             self.pred = None
 
     def predict(self, fvec):
-        pdf = self.reg.predict(fvec)
+        pdf = self.reg.predict_proba(fvec)
         cdf = np.cumsum(pdf)
         draw = random.random()
         ii = bisect_left(cdf,draw)
