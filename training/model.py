@@ -11,9 +11,6 @@ from sklearn.metrics import r2_score, make_scorer
 from abc import ABCMeta, abstractmethod
 import random
 from astroML.density_estimation import bayesian_blocks
-import seaborn as sns
-sns.set_context("talk")
-sns.despine(left=True)
 import matplotlib.pyplot as plt
 from matplotlib import cm
 import munge

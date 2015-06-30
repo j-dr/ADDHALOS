@@ -59,17 +59,19 @@ def readHlist(filepath):
  
     if nfields == 66:
         dtype = np.dtype([('scale',float),('id',int),('mvir',float),('rvir',float),('rs',float),\
-                              ('vrms',float),('vmax',float), ('Rs_Klypin',float),('Mvir_all',float),\
-                              ('M200b',float),('M200c',float),('M500c',float),('M2500c',float),\
-                              ('Macc',float),('Mpeak',float),('Vacc',float),('Vpeak',float)])
-        usecols = [0,1,10,11,12,13,16,34,35,36,37,38,39,56,57,58,59]
+                              ('vrms',float),('vmax',float), ('Rs_Klypin',float),('PX', float),\
+                              ('PY', float), ('PZ', float), ('Mvir_all',float), ('M200b',float),\
+                              ('M200c',float),('M500c',float),('M2500c',float),('Macc',float),\
+                              ('Mpeak',float),('Vacc',float),('Vpeak',float)])
+        usecols = [0,1,10,11,12,13,16,18,19,20,34,35,36,37,38,39,56,57,58,59]
     
     elif nfields == 67:
         dtype = np.dtype([('scale',float),('id',int),('mvir',float),('rvir',float),('rs',float),\
-                              ('vrms',float),('vmax',float), ('Rs_Klypin',float),('Mvir_all',float),\
-                              ('M200b',float),('M200c',float),('M500c',float),('M2500c',float),\
-                              ('Macc',float),('Mpeak',float),('Vacc',float),('Vpeak',float)])
-        usecols = [0,1,10,11,12,13,16,34,35,36,37,38,39,54,55,56,57]
+                              ('vrms',float),('vmax',float), ('Rs_Klypin',float),('PX', float),\
+                              ('PY', float), ('PZ', float),('Mvir_all',float),('M200b',float),\
+                              ('M200c',float),('M500c',float),('M2500c',float),('Macc',float),\
+                              ('Mpeak',float),('Vacc',float),('Vpeak',float)])
+        usecols = [0,1,10,11,12,13,16,18,19,20,34,35,36,37,38,39,54,55,56,57]
     
     else:
         print('Unrecognized Hlist format, check file or update readHlist with new format')
@@ -153,7 +155,6 @@ def readData(indict):
         ii = np.ndarray(len(indict[path]), dtype=int)
         for i in range(len(ii)):
             ii[i] = np.where(np.array(dt.names)==indict[path][i])[0][0]
-        
         data_view[:,ii] = d[indict[path]].view(np.float).reshape(len(d),-1)
         
     return data

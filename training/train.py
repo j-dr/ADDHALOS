@@ -7,7 +7,7 @@ if __name__=='__main__':
 import model
 import trainio
 import matplotlib.pyplot as plt
-import cPickle
+from sklearn.externals import joblib
 
 def trainModel(hfeatdata, pfeatdata, preddata, modeltype='HistGauss', cv=None, store=False):
     """
@@ -27,6 +27,8 @@ def trainModel(hfeatdata, pfeatdata, preddata, modeltype='HistGauss', cv=None, s
         mdl = model.HistGauss(hfeatures, pfeatures, pred, store=store)
     elif modeltype=='RF':
         mdl = model.RF(hfeatures, pfeatures, pred, store=store)
+    elif modeltype=='pdfRF':
+        mdl = model.pdfRF(hfeatures, pfeatures, pred, store=store)
     else:
         print("""Invalid model specification, please provide a valid model
                  for the modeltype keyword""")
@@ -55,19 +57,20 @@ if __name__ == "__main__":
     
     if mt=='RF':
         #mdl = trainModel(hfeatdata, pfeatdata, preddata, modeltype='RF', cv=3)
-        mdl = trainModel(hfeatdata, pfeatdata, preddata, modeltype='RF', store=True)
+        mdl = trainModel(hfeatdata, pfeatdata, preddata, modeltype='pdfRF', store=True)
+        with open('train_tests/pdfrf_fine_10.p', 'w') as fp:
+            joblib.dump(mdl,fp)
+
         print('visualizing')
         mdl.visModel()
         plt.savefig('train_tests/rf_hlist_10.png')
-        with open('train_tests/rf_10.p', 'w') as fp:
-            cPickle.dump(mdl,fp)
     else:
         mdl = trainModel(hfeatdata, pfeatdata, preddata)
         print('visualizing')
         mdl.visModel()
         plt.savefig('train_tests/abgp_hlist_99.png')
         with open('train_tests/abgp_99.p', 'w') as fp:
-            cPickle.dump(mdl,fp)
+            joblib.dump(mdl,fp)
     
 
 
