@@ -63,7 +63,7 @@ def readHlist(filepath):
                               ('PY', float), ('PZ', float), ('Mvir_all',float), ('M200b',float),\
                               ('M200c',float),('M500c',float),('M2500c',float),('Macc',float),\
                               ('Mpeak',float),('Vacc',float),('Vpeak',float)])
-        usecols = [0,1,10,11,12,13,16,18,19,20,34,35,36,37,38,39,56,57,58,59]
+        usecols = [0,1,10,11,12,13,16,34,17,18,19,35,36,37,38,39,56,57,58,59]
     
     elif nfields == 67:
         dtype = np.dtype([('scale',float),('id',int),('mvir',float),('rvir',float),('rs',float),\
