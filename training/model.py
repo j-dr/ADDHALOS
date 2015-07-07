@@ -142,7 +142,7 @@ class Model:
         """
 
         if binning == 'log':
-            lstep = np.array([0.01,0.01])
+            lstep = np.array([0.001,0.01])
             bins = self.log_binning(histarray, lstep)
         elif binning == 'adaptive':
             bins = adaptive_binning(histarray)
