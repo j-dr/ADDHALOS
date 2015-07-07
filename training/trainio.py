@@ -6,6 +6,7 @@ import itertools
 import pynbody as pnb
 import collections
 from glob import glob
+from SimulationAnalysis import readHlist as readHL
 
 def readPartRnn(filepath):
     """ 
@@ -18,7 +19,6 @@ def readPartRnn(filepath):
         #read header
         bytes = fp.read(4*5)
         head = struct.unpack('iiiii', bytes)
-        print(head)
         #read in densities
         bytes = fp.read()
         delta = struct.unpack('{0}f'.format(head[1]), bytes[:-4])
@@ -79,7 +79,6 @@ def readHlist(filepath):
         
 
     halos = np.genfromtxt(filepath,dtype=dtype,usecols=usecols)
-    print(len(halos[halos['id']==0]))
     halos = halos[halos['id']!=0]
 
     return halos
@@ -138,7 +137,7 @@ def readData(indict):
             else:
                 d = readPartRnn(path)
         elif 'hlist' in path:
-            d = readHlist(path)
+            d = readHL(path, fields = indict[path])
         else:
             print("""This feature is not currently handled, if you would like to use
                      it, please add a new i/o fuction
