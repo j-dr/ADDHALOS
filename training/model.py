@@ -2,8 +2,7 @@ from __future__ import print_function, division
 import numpy as np
 import scipy as sp
 from bisect import bisect_left
-from sklearn import gaussian_process
-from sklearn import ensemble
+from sklearn import gaussian_process, ensemble, tree
 from sklearn.neighbors import KernelDensity
 from sklearn.grid_search import GridSearchCV
 from sklearn.cross_validation import train_test_split
@@ -150,9 +149,6 @@ class Model:
             print('Binning type not understood, aborting!')
             raise
 
-        print('bins: {0}'.format(bins))
-        print('histarray.shape: {0}'.format(histarray.shape))
-
         counts, edges = np.histogramdd(histarray, bins=bins, normed=normed)
 
         return counts, bins
@@ -184,8 +180,7 @@ class Model:
         if nslices!=None:
             sX = np.sort(np.unique(X[:,0]))
             step = np.ceil((sX.shape[0]+nslices-1)/nslices)
-            print(step)
-            dbins = sX[:step:]
+            dbins = sX[::step]
             #dbins = np.logspace(np.log10(sX[0]), np.log10(sX[-1]), num=nslices**2)
         else:
             dbins = np.unique(X[:,0])
@@ -194,14 +189,12 @@ class Model:
         if (f==None) and (ax==None):
             f, ax = plt.subplots(nslices,nslices)
         
-        print(dbins)
         for i, db in enumerate(dbins):
             if i==(len(dbins)-1): continue
             #xii = np.where((dbins[i]<=X[:,0]) & (X[:,0]<dbins[i+1]))
             xii = np.where(dbins[i]==X[:,0])
             dens = d[xii]
             widths = X[xii][:,1][1:]-X[xii][:,1][:-1]
-            print(widths)
             ax[i/nslices,i%nslices].set_xscale("log", nonposx='clip')
             ax[i/nslices,i%nslices].bar(X[xii][:,1][:-1],dens[:-1],width=widths,label=label)
             ax[i/nslices,i%nslices].set_title('Density = {0:.2f}'.format(db))
@@ -372,9 +365,8 @@ class HistGauss(Model):
 class RF(Model):
 
     def train(self, cv=None, n_jobs=1):
-        """                                                                                                                                                               Fit a predictive model to features and pred                                                                                                                       """
-
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=0.5, random_state=0)
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(\
+            self.X, self.y, test_size=0.5, random_state=0)
 
         if cv!=None:
             param_grid = {'n_estimators': [5, 10, 20, 40], 'max_features': ['sqrt']}
@@ -414,7 +406,8 @@ class RF(Model):
         """
         Clean the data
         """
-        self.X = np.atleast_2d(self.hfeatures['hdelta']).T
+        self.clean_pred()
+        self.X = np.atleast_2d(self.hfeatures.view((float, len(self.hfeatures[0])))).T
         self.y = self.pred['M200b']
         self.binedges()
         self.feature_dist()
@@ -471,7 +464,8 @@ class pdfRF(Model):
         
     def make_labels(self):
         self.classes = (self.edges[-1][:-1]+self.edges[-1][1:])/2
-        label = np.digitize(self.pred.view((np.float64, len(self.pred[0]))), self.edges[-1])
+        label = np.digitize(self.pred.view((np.float64, len(self.pred[0]))),\
+ self.edges[-1])
         #move values outside of bins into first/last bins
         label[label==len(self.edges[-1])] = len(self.edges[-1])-1
         label -= 1
@@ -512,16 +506,111 @@ class pdfRF(Model):
 
     def predict(self, fvec):
         pdf = self.reg.predict_proba(fvec)
-        cdf = np.cumsum(pdf)
-        draw = random.random()
-        ii = bisect_left(cdf,draw)
+        cdf = np.cumsum(pdf, axis=1)
+        draw = np.random.random(len(fvec))
+        ii = np.array([bisect_left(cdf[i],draw[i]) for i in range(len(fvec))])
         
         return self.classes[ii]
 
     def visModel(self):
 
         f, ax = plt.subplots(2)
-        pred = self.reg.predict(self.X_test)
+        pred = self.predict(self.X_test)
+
+        histarray = np.vstack((self.X_test.T, pred.T)).T
+        counts, edges = self.histogram(histarray)
+        X, y, edges = self.flattenHist(counts, edges)
+        f, ax = self.visDensity(X, y, label='Pred')
+
+        arrays = [self.hfeatures, self.pred]
+        histarray = munge.join_rec_arrays(arrays)
+        counts, edges = self.histogram(histarray)
+        X, y, edges = self.flattenHist(counts, edges)
+        f, ax = self.visDensity(X, y, f=f, ax=ax, label='Truth')
+
+        plt.legend()
+
+
+class pdfDT(Model):
+
+    def preprocess(self):
+        """
+        Preprocess the data that we will fit the model to
+
+        """
+        self.preproc_hist()
+        self.feature_dist()
+
+        if self.store==True:
+            self.hfeatures=None
+            self.pfeatures=None
+            self.pred = None
+        
+    def preproc_hist(self):
+        self.clean_pred()
+        arrays = [self.hfeatures, self.pred]
+        histarray = munge.join_rec_arrays(arrays)
+        histarray = histarray.view((np.float, len(histarray.dtype.names)))        
+
+        pdf, self.edges = self.histogram(histarray, normed=True)
+        self.support, self.jpdf, self.edges = self.flattenHist(pdf, self.edges)
+        self.X = np.atleast_2d(self.hfeatures.view((float, len(self.hfeatures[0])))).T
+        self.y = self.make_labels()
+        
+    def make_labels(self):
+        self.classes = (self.edges[-1][:-1]+self.edges[-1][1:])/2
+        label = np.digitize(self.pred.view((np.float64, len(self.pred[0]))), \
+                                self.edges[-1])
+        #move values outside of bins into first/last bins
+        label[label==len(self.edges[-1])] = len(self.edges[-1])-1
+        label -= 1
+        label[label<0] = 0
+
+        return label
+
+    def train(self, cv=None, n_jobs=1):
+        """
+        Fit a predictive model to features and pred
+        """
+
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=0.1, random_state=0)
+
+        if cv!=None:
+            param_grid = {'n_estimators': [5, 10, 20, 40], 'max_features': ['sqrt']}
+            scorer = make_scorer(r2_score)
+            dt = tree.DecisionTreeClassifier()
+            reg = GridSearchCV(dt,param_grid,cv=cv,scoring=scorer,n_jobs=n_jobs)
+            reg.fit(self.X_train, self.y_train)
+        else:
+            try:
+                reg = tree.DecisionTreeClassifier()
+                reg.fit(self.X_train,self.y_train)
+                
+            except Exception as e:
+                print(e)
+                print('*****Fit Failed*****')
+                raise
+        
+        print('Fit successful')
+        self.reg = reg
+
+        if self.store==True:
+            self.X = None
+            self.y = None
+            self.pred = None
+
+    def predict(self, fvec):
+        pdf = self.reg.predict_proba(fvec)
+        cdf = np.cumsum(pdf, axis=1)
+        draw = np.random.random(len(fvec))
+        ii = np.array([bisect_left(cdf[i],draw[i]) for i in range(len(fvec))])
+        
+        return self.classes[ii]
+
+    def visModel(self):
+
+        f, ax = plt.subplots(2)
+        pred = self.predict(self.X_test)
 
         histarray = np.vstack((self.X_test.T, pred.T)).T
         counts, edges = self.histogram(histarray)
