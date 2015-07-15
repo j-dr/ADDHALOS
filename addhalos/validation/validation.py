@@ -11,7 +11,7 @@ import fitsio
 from CorrelationFunction import projected_correlation
 
 
-def plotWpRp(ipos, ppos, outbase, zmax=40., h=0.7, Lb=400, rmin=0.1, rmax=2, rstep=0.1):
+def plotWpRp(ipos, ppos, outbase, zmax=40., h=0.7, Lb=400, rmin=0.1, rmax=2, rstep=0.1, ax = None ):
     """
     Make a comparison plot between the input projected correlation function
     and the predicted projected correlation function
@@ -26,16 +26,19 @@ def plotWpRp(ipos, ppos, outbase, zmax=40., h=0.7, Lb=400, rmin=0.1, rmax=2, rst
     iwpe = np.sqrt( np.diagonal( icov ) )
     pwpe = np.sqrt( np.diagonal( pcov ) )
 
-    f, ax = plt.subplots(1)
+    if ax == None:
+        f, ax = plt.subplots(1)
+    
     ax.set_yscale( 'log', nonposy = 'clip' )
     ax.set_xscale( 'log', nonposx = 'clip' )
     ax.set_ylabel( r'$w_{p}(r_{p})$', fontsize=20 )
-    ax.set_xlabel( r'$r_{p} [Mpc\cdot h^{-1}$', fontsize=20 )
+    ax.set_xlabel( r'$r_{p} [Mpc\cdot h^{-1}]$', fontsize=20 )
 
     ax.errorbar( rcen, iwprp, yerr = iwpe, label='Original Halos' )
     ax.errorbar( rcen, pwprp, yerr = pwpe, label='Added Halos' )
-    
-    plt.tight_layout()
+
+    plt.legend()
+    #plt.tight_layout()
     plt.savefig( outbase+'_wprp.png' )
     
     wdtype = np.dtype( [ ('r', float), ('iwprp', float), ('pwprp', float), 
@@ -48,6 +51,8 @@ def plotWpRp(ipos, ppos, outbase, zmax=40., h=0.7, Lb=400, rmin=0.1, rmax=2, rst
     wprp[ 'pwprpe' ] = pwpe
 
     fitsio.write(outbase+'_wprp.fit', wprp)
+
+    return f, ax
     
 
 def plotMassFunction(im, pm, outbase, mmin=9, mmax=13, mstep=0.05):
@@ -55,6 +60,7 @@ def plotMassFunction(im, pm, outbase, mmin=9, mmax=13, mstep=0.05):
     Make a comparison plot between the input mass function and the 
     predicted projected correlation function
     """
+    plt.clf()
 
     nmbins = ( mmax - mmin ) / mstep
     mbins = np.logspace( mmin, mmax, nmbins )
@@ -69,7 +75,7 @@ def plotMassFunction(im, pm, outbase, mmin=9, mmax=13, mstep=0.05):
     plt.legend()
     plt.xlabel( r'$M_{vir}$' )
     plt.ylabel( r'$\frac{dN}{dM}$' )
-    plt.tight_layout()
+    #plt.tight_layout()
     plt.savefig( outbase+'_mfcn.png' )
     
     mdtype = np.dtype( [ ('mcen', float), ('imcounts', float), ('pmcounts', float) ] )
@@ -80,12 +86,60 @@ def plotMassFunction(im, pm, outbase, mmin=9, mmax=13, mstep=0.05):
 
     fitsio.write( outbase+'_mfcn.fit', mf )
 
+def plotMassFunctionRatio(im, pm, outbase, mmin=9, mmax=13, mstep=0.05):
+    """
+    Make a comparison plot between the input mass function and the 
+    predicted projected correlation function
+    """
+    gs = mpl.gridspec.GridSpec(4,1)
+    f = plt.figure()
+
+    nmbins = ( mmax - mmin ) / mstep
+    mbins = np.logspace( mmin, mmax, nmbins )
+    mcen = ( mbins[:-1] + mbins[1:] ) /2
+    
+    ic, e = np.histogram( im, bins=mbins )
+    pc, e = np.histogram( pm, bins=mbins )
+    rc = pc / ic
+
+    ice = np.sqrt( ic )
+    pce = np.sqrt( pc )
+    rce = rc * np.sqrt( ( ice / ic ) ** 2 + ( pce / pc ) ** 2 )
+
+    imsk = ( ice != 0 ) & ( ice == ice )
+    pmsk = ( pce != 0 ) & ( pce == pce )
+    rmsk = ( rce != 0 ) & ( rce == rce )
+    
+    ax = plt.subplot( gs[:2, :] )
+    ax.set_xscale( 'log' )
+    ax.set_yscale( 'log' )
+    ax.set_ylabel( r'$\frac{dN}{dM}$' )
+
+    ax.errorbar( mcen[ imsk ], ic[ imsk ], yerr = ice[ imsk ], label = 'Original Halos' )
+    ax.errorbar( mcen[ pmsk ] , pc[ pmsk ], yerr = pce[ pmsk ], label = 'Added Halos' )
+
+    plt.legend()
+
+    ax = plt.subplot( gs[2:, :] )
+    ax.set_xscale( 'log' )
+    ax.set_yscale( 'log' )
+
+    ax.errorbar( mcen[ rmsk ], rc[ rmsk ] , yerr = rce[ rmsk ] )
+    ax.plot( mcen, np.zeros( len( mcen ) ) + 1, 'k' )
+    ax.set_ylabel( r'$f_\frac{dN}{dM}$' )
+    #ax = plt.subplot( gs[ :, : ] )
+    ax.set_xlabel( r'$M_{vir}$' )
+
+    plt.tight_layout()
+    plt.savefig( outbase+'_mfcnr.png' )
+    
+
 def plotFeaturePDF(ift, pft, outbase, fmin=0.0, fmax=1.0, fstep=0.01):
     """
     Plot a comparison between the input feature distribution and the 
     feature distribution of the predicted halos
     """
-
+    plt.clf()
     nfbins = ( fmax - fmin ) / fstep
     fbins = np.logspace( fmin, fmax, nfbins )
     fcen = ( fbins[:-1] + fbins[1:] ) / 2
@@ -110,7 +164,7 @@ def plotFeaturePDF(ift, pft, outbase, fmin=0.0, fmax=1.0, fstep=0.01):
 
 
 def plotSSMassFunction(im, pm, ipos, ppos, outbase, mmin=9, mmax=13, mstep=0.05, side=2, boxsize=400):
-
+    plt.clf()
 
     sidecuts = np.array( [ boxsize / ( 2 * side ) + boxsize * i / side for i in range( side ) ] )
     grid = np.meshgrid( sidecuts, sidecuts, sidecuts )
@@ -169,21 +223,23 @@ def plotSSMassFunction(im, pm, ipos, ppos, outbase, mmin=9, mmax=13, mstep=0.05,
 
     #plt.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc=3,
     #           ncol=2, mode="expand", borderaxespad=0.)
-    plt.tight_layout()
+    #plt.tight_layout()
     
     plt.savefig( outbase+'_ssmfcn.png' )
     
 
 if __name__ == '__main__':
 
+    #predpath = '/nfs/slac/g/ki/ki21/cosmo/jderose/halos/rockstar/output/FLb400/hlists/hlist_99.list'
     predpath = '/nfs/slac/g/ki/ki21/cosmo/jderose/halos/rockstar/output/FLb400/hlists/hlist_10.list'
+    #hfeatpath = '/nfs/slac/g/ki/ki22/cosmo/jderose/halos/calcrnn/output/FLb400/snapdir099/rnn_hlist_99'
     hfeatpath = '/nfs/slac/g/ki/ki22/cosmo/jderose/halos/calcrnn/output/FLb400/snapdir010/rnn_hlist_10'
     hfeatdata = {hfeatpath:['hdelta']}
-    preddata = {predpath:['PX', 'PY', 'PZ', 'M200b']}
+    preddata = {predpath:['x', 'y', 'z', 'M200b']}
     hfeatures = trainio.readData(hfeatdata)
     pred = trainio.readData(preddata)    
 
-    pfeatpath = '/nfs/slac/g/ki/ki22/cosmo/jderose/halos/calcrnn/output/FLb400/snapdir010/parts/*rnn*snapshot_downsample_010.99'
+    pfeatpath = '/nfs/slac/g/ki/ki22/cosmo/jderose/halos/calcrnn/output/FLb400/snapdir010/parts/*rnn*snapshot_downsample_010.*'
     pfeatdata = {pfeatpath:['pdelta']}
     features = trainio.readData(pfeatdata)
     features = np.atleast_2d(features).T    
@@ -192,16 +248,27 @@ if __name__ == '__main__':
     hfeatures = hfeatures[ii]
     pred = pred[ii] 
 
-    halos2 = fitsio.read('/nfs/slac/g/ki/ki22/cosmo/jderose/addhalos/halocats/FLb400/010_v4/out0.list', ext=1)
+    halos2 = fitsio.read('/nfs/slac/g/ki/ki22/cosmo/jderose/addhalos/halocats/FLb400/010_rfr/out0.list', ext=1)
 
-    ohp = pred[['PX', 'PY', 'PZ']].view((pred['PX'].dtype, 3))
+    ohp = pred[['x', 'y', 'z']].view((pred['x'].dtype, 3))
     php = halos2[['PX', 'PY', 'PZ']].view((halos2['PX'].dtype, 3))
     im = pred['M200b']
     pm = halos2['M200b']
-    outbase = 'plots/f400_pdfrf_ufine_10'
+    outbase = 'plots/f400_rf_ufine_10'
+
+    mcuts = [ 1e10, 1e11, 1e12 ]
     
     plotSSMassFunction(im, pm, ohp, php, outbase)
-    plotWpRp(ohp, php, outbase)
+    plotMassFunctionRatio(im, pm, outbase)
+
+    for i, mc in enumerate( mcuts ):
+        omsk = ( im >= mc )
+        pmsk = ( pm >= mc )
+        if i == 0:
+            f, ax = plotWpRp( ohp[ omsk ], php[ pmsk ], outbase + '_{0}'.format( mc ) )
+        else:
+            f, ax = plotWpRp( ohp[ omsk ], php[ pmsk ], outbase + '_{0}'.format( mc ), ax = ax)
+
     plotMassFunction(im, pm, outbase)
     plotFeaturePDF(hfeatures['hdelta'], halos2['pdelta'], outbase)
     
