@@ -19,7 +19,7 @@ import pickle
 class Model:
     __metaclass__ = ABCMeta
 
-    def __init__(self, hfeatures, pfeatures, pred, pmod=None, store=False):
+    def __init__(self, hfeatures, pfeatures, pred, pmod=None, store=False, lstep=None):
 
         #If no pickle file provided, use features to construct object
         if pmod==None:
@@ -28,8 +28,11 @@ class Model:
             self.pred = pred
             self.pred_dtype = pred.dtype
             self.feat_dtype = hfeatures.dtype
-            self.store=store
-            
+            self.nfeats = hfeatures.shape[-1]
+            self.npred = pred.shape[-1]
+            self.store = store
+            self.lstep = lstep
+                
         else:
             raise NotImplementedError
             
@@ -62,8 +65,10 @@ class Model:
         """
         Get rid of zero mass and very low mass entries in key
         """
-
-        ii, = np.where((self.pred[key]!=0) & (self.pred[key]>1e10))
+        if key=='M200b':
+            ii, = np.where((self.pred[key]!=0) & (self.pred[key]>1e10))
+        else:
+            ii, = np.where(self.pred[key]!=0)
         self.pred = self.pred[ii]
         self.hfeatures = self.hfeatures[ii]
 
@@ -90,23 +95,6 @@ class Model:
             return True
         else:
             return False
-
-    def adaptive_binning(self, histarray):
-        """
-        Calculate optimal bin edges for density histogram using adaptive bayesian blocks 
-        """
-        
-        bins = []
-
-        for i in range(len(histarray.shape)):
-            #subsample the data to speed up adaptive binning
-            #t = random.sample(histarray[:,i],100000)
-            t = histarray[:,i]
-
-            b = bayesian_blocks(t)
-            bins.append(b)
-
-        return bins
 
     def log_binning(self, histarray, dex):
         """
@@ -141,10 +129,10 @@ class Model:
         """
 
         if binning == 'log':
-            lstep = np.array([0.001,0.01])
-            bins = self.log_binning(histarray, lstep)
-        elif binning == 'adaptive':
-            bins = adaptive_binning(histarray)
+            if self.lstep == None:
+                self.lstep = np.zeros(histarray.shape[1]) + 0.01
+
+            bins = self.log_binning(histarray, self.lstep)
         else:
             print('Binning type not understood, aborting!')
             raise
@@ -225,7 +213,7 @@ class HistGauss(Model):
         
     def preproc_hist(self):
         
-        self.clean_pred()
+        self.clean_pred(key=self.pred.dtype.names[0])
         arrays = [self.hfeatures, self.pred]
         histarray = munge.join_rec_arrays(arrays)
         histarray = histarray.view((np.float, len(histarray.dtype.names)))        
@@ -531,6 +519,81 @@ class pdfRF(Model):
         plt.legend()
 
 
+class DT(Model):
+
+    def train(self, cv=None, n_jobs=1):
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(\
+            self.X, self.y, test_size=0.5, random_state=0)
+
+        if cv!=None:
+            param_grid = {'n_estimators': [5, 10, 20, 40], 'max_features': ['sqrt']}
+            scorer = make_scorer(r2_score)
+            rndf = tree.DecisionTreeRegressor()
+            reg = GridSearchCV(rndf,param_grid,cv=cv,scoring=scorer,n_jobs=n_jobs)
+            reg.fit(self.X_train, self.y_train)
+        else:
+            try:
+                reg = tree.DecisionTreeRegressor()
+                reg.fit(self.X_train,self.y_train)
+                
+            except Exception as e:
+                print(e)
+                print('*****Fit Failed*****')
+        
+        print('Fit successful')
+        self.reg = reg
+
+        if self.store==True:
+            self.hfeatures = None
+            self.pfeatures = None
+            self.pred = None
+            
+    def binedges(self):
+        """
+        Calculate feature bin edges for feature distribution calculation
+        """
+        arrays = [self.hfeatures, self.pred]
+        histarray = munge.join_rec_arrays(arrays)
+        histarray = histarray.view((np.float, len(histarray.dtype.names)))
+        counts, edges = self.histogram(histarray, normed=True)
+        X, y, edges = self.flattenHist(counts, edges)
+        self.edges = edges
+
+    def preprocess(self):
+        """
+        Clean the data
+        """
+        self.clean_pred()
+        self.X = np.atleast_2d(self.hfeatures.view((float, len(self.hfeatures[0])))).T
+        self.y = self.pred['M200b']
+        self.binedges()
+        self.feature_dist()
+
+    def predict(self, fvec):
+        """                                                                                                                                                               Use the model to predict values using the provided feature vector
+        """
+        
+        return self.reg.predict(fvec)
+
+    def visModel(self):
+
+        f, ax = plt.subplots(2)
+        pred = self.reg.predict(self.X_test)
+
+        histarray = np.vstack((self.X_test.T, pred.T)).T
+        counts, edges = self.histogram(histarray)
+        X, y, edges = self.flattenHist(counts, edges)
+        f, ax = self.visDensity(X, y, label='Pred')
+
+        histarray = np.vstack((self.X_test.T, self.y_test.T)).T
+        counts, edges = self.histogram(histarray)
+        X, y, edges = self.flattenHist(counts, edges)
+        f, ax = self.visDensity(X, y, f=f, ax=ax, label='Truth')
+
+        plt.legend()
+
+
+
 class pdfDT(Model):
 
     def preprocess(self):
@@ -547,7 +610,7 @@ class pdfDT(Model):
             self.pred = None
         
     def preproc_hist(self):
-        self.clean_pred()
+        self.clean_pred(key=self.pred.dtype.names[0])
         arrays = [self.hfeatures, self.pred]
         histarray = munge.join_rec_arrays(arrays)
         histarray = histarray.view((np.float, len(histarray.dtype.names)))        
@@ -625,75 +688,65 @@ class pdfDT(Model):
 
         plt.legend()
 
-    
 
-class KDE(Model):
-    
+class GMM(model):
+
+
     def preprocess(self):
+        """
+        Preprocess the data that we will fit the model to
 
-        nbins = 100
+        """
+        self.preproc_hist()
+        self.feature_dist()
+
+        if self.store==True:
+            self.hfeatures=None
+            self.pfeatures=None
+            self.pred = None
+        
+
+    def preproc_hist(self):
+        self.clean_pred(key=self.pred.dtype.names[0])
         arrays = [self.hfeatures, self.pred]
         histarray = munge.join_rec_arrays(arrays)
-        self.histarray = histarray.view((np.float, len(histarray.dtype.names)))
+        histarray = histarray.view((np.float, len(histarray.dtype.names)))        
+
+        self.X = np.atleast_2d(self.hfeatures.view((float, len(self.hfeatures[0])))).T
+
+
+    def train(self, n_components=4):
+
+        self.X_train, self.X_test = train_test_split(self.X, test_size=0.1, random_state=0)
+
+        try:
+            reg = mixture.GMM(n_components=n_components, covariance_type='full')
+            reg.fit(self.X_train)
+                
+            except Exception as e:
+                print(e)
+                print('*****Fit Failed*****')
+                raise
         
-        counts, edges = np.histogramdd(self.histarray, bins=nbins, normed=True)
+        print('Fit successful')
+        self.reg = reg
+        self.icovars = np.linalg.inv(reg.covars_)
+        self.predcov = np.linalg.inv(self.icovars_[:, self.npred:, self.npred:])
+        self.featcov = self.reg.covars_[:,:self.nfeat,:self.nfeat]
+
+    def predict(self, fvec):
+        lil = np.dot(self.predcov, self.icovars[:, self.npred:, :self.nfeat])
+        mud = fvec - self.reg.means_[self.nfeat:]
+        condMeans = self.reg.means_[:self.npred] - np.dot(lil, mud)
+        fsamples = np.array([np.random.multivariate_normal(self.reg.means_[i,:], \
+                                                               self.featcov[i,:,:]) \
+                                 for i in range(len(self.n_components))])
+        condWeights = self.reg.weights_*fsamples/np.sum(fsamples)
         
-        self.edges = edges
-        centers = [[(edges[i][j]+edges[i][j+1])/2 for j in range(len(edges[i])-1)] for i in range(len(edges))]
         
-        npts = 1
-        for i in range(len(centers)):
-            npts*=len(centers[i])
-            
-        self.X = np.ndarray((npts,len(centers)))
-        self.y = counts.flatten()
+        pdf = self.reg.predict_proba(fvec)
+        cdf = np.cumsum(pdf, axis=1)
+        draw = np.random.random(len(fvec))
+        ii = np.array([bisect_left(cdf[i],draw[i]) for i in range(len(fvec))])
         
-        temp = np.meshgrid(*centers)
-        for i in range(len(centers)):
-            self.X[:,i] = temp[i].flatten()
-
-    def train(self, cv=None):
-
-        self.hist_train, self.hist_test = train_test_split(self.histarray, test_size=0.5, random_state=0)
-        
-        if cv==None:
-            bandwidth = 1e8
-            #rtol = 1e-8
-            kde = KernelDensity(bandwidth=bandwidth)
-            kde.fit(self.histarray)
-            self.reg = kde
-            
-        else:
-            param_grid = {'bandwidth':np.logspace(1,12,10)}
-            kde = GridSearchCV(KernelDensity(),param_grid,cv=cv)
-            kde.fit(self.hist_train)
-
-    def visModel(self, suptitle=None):
-
-        ncuts = 3
-        f, ax = plt.subplots(ncuts,ncuts)
-        sX = np.sort(np.unique(self.X[:,0]))
-        dbins = np.logspace(np.log10(np.min(sX)),np.log10(np.max(sX)),ncuts**2+1)
-        print(dbins)
-        for i,d in enumerate(dbins):
-            if i==(len(dbins)-1): continue
-            xii = np.where((dbins[i]<=self.X[:,0]) & (self.X[:,0]<dbins[i+1]))
-            log_pdf = self.reg.score_samples(self.X[xii])
-            pred = np.exp(log_pdf)
-            truth = self.y[xii]
-
-            ax[i/ncuts,i%ncuts].set_xscale("log", nonposx='clip')
-            ax[i/ncuts,i%ncuts].plot(self.X[xii][:,1],pred,label='Prediction')
-            ax[i/ncuts,i%ncuts].plot(self.X[xii][:,1],truth, label='Truth')
-            ax[i/ncuts,i%ncuts].set_title('Density = {0:.2f}'.format(d))
-            plt.legend()
-
-        if suptitle!=None:
-            f.suptitle(suptitle)
-
-        plt.tight_layout()
-
-    def predict(self):
-        pass
-
-    
+        return self.classes[ii]
