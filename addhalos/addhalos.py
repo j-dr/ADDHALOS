@@ -5,12 +5,13 @@ if __name__=='__main__':
 import model
 import random
 import trainio
-import pickle
 import argparse
 import haloio
+import reweight
 import fitsio
 import numpy as np
 from bisect import bisect_left
+from sklearn.externals import joblib
 from glob import glob
 
 
@@ -32,6 +33,7 @@ def addHalos(particles, features, mdl):
     pl = list(particles.dtype.names)
     ii = np.ndarray(features.shape[1], dtype=int)
     count = 0
+
     for i,p in enumerate(particles):
         #Search for correct bin in feature space
         for j in range(len(ii)):
@@ -52,13 +54,13 @@ def addHalos(particles, features, mdl):
             hpart[count] = p
             count+=1
 
-    halos['PX'] = hpart['PX']
-    halos['PY'] = hpart['PY']
-    halos['PZ'] = hpart['PZ']
-    halos['VX'] = hpart['VX']
-    halos['VY'] = hpart['VY']
-    halos['VZ'] = hpart['VZ']
-    halos['ID'] = hpart['ID']
+    halos['x'] = hpart['x']
+    halos['y'] = hpart['y']
+    halos['z'] = hpart['z']
+    halos['vx'] = hpart['vx']
+    halos['vy'] = hpart['vy']
+    halos['vz'] = hpart['vz']
+    halos['id'] = hpart['id']
 
     for n in fl:
         halos[n] = hfeat[n]
@@ -66,18 +68,16 @@ def addHalos(particles, features, mdl):
     for n in ml:
         halos[n] = hpred[n]
     
-        
     halos = halos[:count]
     return halos
             
 
-def main(configfile, combine=True):
+def main(configfile):
     
     #Read in parameters from the configuration file
     params = haloio.readConfigFile(configfile)
 
-    with open(params.modelpath, 'r') as fp:
-        mdl = pickle.load(fp)
+    mdl = joblib.load(params.modelpath)
 
     #Load the particle locations/velocities and feature data
     for pp in params.pplist:
@@ -93,26 +93,20 @@ def main(configfile, combine=True):
         op = params.outpath+'{0}.halo'.format(pps[-1])
         fitsio.write(op, halos)
         
-    if combine==True:
-        hpath = params.outpath+'*.halo'
-        cpath = params.outpath+'/out0.list'
-        combineHalos(hpath, cpath)
-
-
-def combineHalos(globpath, outpath):
     
-    files = glob(globpath)
-    fits = fitsio.FITS(outpath, 'rw', vstorage='object')
-    for i, f in enumerate(files):
-        h = fitsio.read(f, ext=1)
-        fits.update_hdu_list()
-        if len(fits.hdu_list)<2:
-            fits.write(h)
-        else:
-            fits[-1].append(h)
+    #combine halo files into reconstructed halo catalog
+    hpath = params.outpath+'*.halo'
+    cpath = params.outpath+'/out0.rc.list'
+    rhcat = haloio.combineHalos(hpath, cpath)
 
-    fits.close()
-        
+    #combine original halos and reconstructed halos
+    if 'ohalopath' in params.keys():
+
+        ohcat = trainio.readHL(params.ohalopath, fields=rch.dtype.names)
+        h = reweight.combineRWHalos(ohcat, rhcat, params.rproxy)
+        fitsio.write(params.outpath+'out0.list')
+
+
 if __name__=='__main__':
 
     parser = argparse.ArgumentParser()

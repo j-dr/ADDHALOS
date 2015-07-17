@@ -17,23 +17,23 @@ def reweight(x, rwfcn):
 
     return rwmask
 
-def combineRWHalos(hrcat, lrcat, cproxy, fields=['x', 'y', 'z']):
+def combineRWHalos(ohcat, rhcat, rproxy, fields=['x', 'y', 'z']):
     """
     Given a high resolution halo catalog and a reconstructed low 
     resolution halo catalog, combine them by reweighing each catalog
     based on a function modeling the completeness of the original
     low resolution catalog
     """
-    fields.append(cproxy)
+    fields.append(rproxy)
     
     hfcn = lambda x : expSigmoidWeight(x, 2e11, 1e10, 12)
     lfcn = lambda x : 1 - expSigmoidWeight(x, 2e11, 1e10, 12)
 
-    hmask = reweight(hrcat[cproxy], hfcn)
-    lmask = reweight(lrcat[cproxy], lfcn)
+    hmask = reweight(ohcat[rproxy], hfcn)
+    lmask = reweight(rhcat[rproxy], lfcn)
 
-    rwh = hrcat[hmask]
-    rwl = lrcat[lmask]
+    rwh = ohcat[hmask]
+    rwl = rhcat[lmask]
 
     rwh = rwh[fields]
     rwl = rwl[fields]

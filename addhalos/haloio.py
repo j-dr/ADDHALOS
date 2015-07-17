@@ -1,5 +1,7 @@
 from __future__ import print_function
+from glob import glob
 import numpy as np
+import fitsio
 
 
 class Config:
@@ -104,5 +106,28 @@ def readConfigFile(fname):
 
     pdict = dict(zip(keys, values))
     return Config(pdict)
+
+
+def combineHalos(globpath, outpath):
+    
+    files = glob(globpath)
+    fits = fitsio.FITS(outpath, 'rw', vstorage='object')
+
+    for i, f in enumerate(files):
+        if i == 0:
+            h = fitsio.read(f, ext=1)
+        else:
+            nh = fitsio.read(f, ext=1)
+            h = np.hstack([h,nh])
+
+    fits.update_hdu_list()
+    if len(fits.hdu_list)<2:
+        fits.write(h)
+    else:
+        fits[-1].append(h)
+
+    fits.close()
+
+    return h
 
     
