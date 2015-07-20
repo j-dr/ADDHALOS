@@ -26,21 +26,21 @@ def combineRWHalos(ohcat, rhcat, rproxy, fields=['x', 'y', 'z']):
     """
     fields.append(rproxy)
     
-    hfcn = lambda x : expSigmoidWeight(x, 2e11, 1e10, 12)
-    lfcn = lambda x : 1 - expSigmoidWeight(x, 2e11, 1e10, 12)
+    ofcn = lambda x : expSigmoidWeight(x, 5e11, 5e10, 12.2)
+    rfcn = lambda x : 1 - expSigmoidWeight(x, 5e11, 5e10, 12.2)
 
-    hmask = reweight(ohcat[rproxy], hfcn)
-    lmask = reweight(rhcat[rproxy], lfcn)
+    omask = reweight(ohcat[rproxy], ofcn)
+    rmask = reweight(rhcat[rproxy], rfcn)
 
-    rwh = ohcat[hmask]
-    rwl = rhcat[lmask]
+    rwo = ohcat[omask]
+    rwr = rhcat[rmask]
 
-    rwh = rwh[fields]
-    rwl = rwl[fields]
+    rwo = rwo[fields]
+    rwr = rwr[fields]
 
-    cat = np.hstack([rwh, rwl])
+    cat = np.hstack([rwo, rwr])
 
-    return cat
+    return cat, rwo, rwr
     
 
         

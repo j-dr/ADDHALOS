@@ -28,7 +28,7 @@ class Model:
             self.pred = pred
             self.pred_dtype = pred.dtype
             self.feat_dtype = hfeatures.dtype
-            self.nfeats = hfeatures.shape[-1]
+            self.nfeat = hfeatures.shape[-1]
             self.npred = pred.shape[-1]
             self.store = store
             self.lstep = lstep
@@ -689,7 +689,7 @@ class pdfDT(Model):
         plt.legend()
 
 
-class GMM(model):
+class GMM(Model):
 
 
     def preprocess(self):
@@ -723,10 +723,10 @@ class GMM(model):
             reg = mixture.GMM(n_components=n_components, covariance_type='full')
             reg.fit(self.X_train)
                 
-            except Exception as e:
-                print(e)
-                print('*****Fit Failed*****')
-                raise
+        except Exception as e:
+            print(e)
+            print('*****Fit Failed*****')
+            raise
         
         print('Fit successful')
         self.reg = reg
@@ -735,18 +735,27 @@ class GMM(model):
         self.featcov = self.reg.covars_[:,:self.nfeat,:self.nfeat]
 
     def predict(self, fvec):
+        #condition GMM on given features
         lil = np.dot(self.predcov, self.icovars[:, self.npred:, :self.nfeat])
         mud = fvec - self.reg.means_[self.nfeat:]
         condMeans = self.reg.means_[:self.npred] - np.dot(lil, mud)
-        fsamples = np.array([np.random.multivariate_normal(self.reg.means_[i,:], \
-                                                               self.featcov[i,:,:]) \
-                                 for i in range(len(self.n_components))])
+        mvn = [sp.stats.multivariable_normal(self.reg.means_[i,:], self.featcov[i,:,:])\
+                   for i in range(self.n_components)]
+        fsamples = np.array([mvn[i].pdf(fvec) for i in range(self.n_components)])
         condWeights = self.reg.weights_*fsamples/np.sum(fsamples)
-        
-        
-        pdf = self.reg.predict_proba(fvec)
-        cdf = np.cumsum(pdf, axis=1)
-        draw = np.random.random(len(fvec))
-        ii = np.array([bisect_left(cdf[i],draw[i]) for i in range(len(fvec))])
-        
-        return self.classes[ii]
+
+        #Sample from conditional distribution
+        #first select the component to associate input with
+        X = np.empty((len(fvec), self.npred))
+        weightCDF = np.cumsum(condWeights)
+        rand = np.random.random(len(fvec))
+        comps = weightCDF.searchsorted(rand)
+
+        #Sample each component associated with an input feature
+        for comp in range(self.n_components):
+            thisComp = (comps == comp)
+            nSamples = thisComp.sum()
+            if not nSamples:
+                X[thisComp] = mvn[i].rvs(size=nSamples)
+                    
+        return X
