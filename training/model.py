@@ -1,6 +1,8 @@
 from __future__ import print_function, division
 import numpy as np
 import scipy as sp
+import matplotlib.pyplot as plt
+from matplotlib import cm
 from bisect import bisect_left
 from sklearn import gaussian_process, ensemble, tree, mixture
 from sklearn.neighbors import KernelDensity
@@ -8,12 +10,16 @@ from sklearn.grid_search import GridSearchCV
 from sklearn.cross_validation import train_test_split
 from sklearn.metrics import r2_score, make_scorer
 from abc import ABCMeta, abstractmethod
-import random
 from astroML.density_estimation import bayesian_blocks
-import matplotlib.pyplot as plt
-from matplotlib import cm
+import random
 import munge
-import pickle 
+import pickle
+try:
+    import triangle
+    hasTriangle = True
+except ImportError, e:
+    hasTriangle = False
+    pass
 
 
 class Model:
@@ -784,9 +790,60 @@ class GMM(Model):
                     
         return X
 
-    def conditionJPDF(self, fvec):
-        """
-        Condition the joint PDF on fvec
-        """
-        pass
+    def visModel(self, labels=None, fname=None):
 
+        nSamples = 1e6
+        samples = self.reg.sample(n_samples=nSamples)
+        
+        if self.pred == None:
+            if hasTriangle:
+                figure = triangle.corner(samples, labels=labels,
+                                         quantiles=[0.16, 0.5, 0.84],
+                                         show_titles=True, title_args={"fontsize": 12})
+                if fname!=None:
+                    plt.savefig('predicted_'+fname)
+
+            elif samples.size[1]==2:
+                f, ax = plt.subplots(1)
+                ax.hist2d(samples[:,0], samples[:,1])
+                if fname!=None:
+                    plt.savefig('predicted_'+fname)
+
+            else:
+                raise NotImplementedError("Plotting datasets w/ dim > 2 without Triangle not implemented")
+
+        else:
+            if hasTriangle:
+                figure = triangle.corner(samples, labels=labels,
+                                         quantiles=[0.16, 0.5, 0.84],
+                                         show_titles=True, title_args={"fontsize": 12})
+                if fname!=None:
+                    plt.savefig('predicted_'+fname)
+                
+                figure = triangle.corner(self.X, labels=labels,
+                                         quantiles=[0.16, 0.5, 0.84],
+                                         show_titles=True, title_args={"fontsize": 12})
+                if fname!=None:
+                    plt.savefig('original_'+fname)
+
+            elif samples.size[1]==2:
+                f, ax = plt.subplots(2)
+                ax[0].hist2d(samples[:,0], samples[:,1])
+                ax[1].hist2d(self.X[:,0], self.X[:,1])
+                ax[1].set_xlabel(labels[0])
+                ax[1].set_ylabel(labels[1])
+                plt.tight_layout()
+                if fname!=None:
+                    plt.savefig(fname)
+
+            else:
+                raise NotImplementedError("Plotting datasets w/ dim > 2 without Triangle not implemented")
+
+    def visCPDF(self, condition):
+
+        raise NotImplementedError
+        
+        
+        
+        
+        
