@@ -98,14 +98,19 @@ class Model:
         self.php = hcounts/pcounts
 
     def assignHalo(self, fvec):
-        
-        choice = random.random()
-        ii = []
-        for i in range(self.php.shape[1]):
-            ii.append(bisect_left(edges[i], fvec[i]))
-        
-        ii = np.array(ii)
-        if choice<=self.php[ii]:
+        ii = np.ndarray(fvec.shape[1], dtype=int)
+        for j in range(len(ii)):
+            bi = bisect_left(self.edges[j], fvec[j])
+            #If higher than largest bin edge, set as last bin
+            if bi>(len(self.edges[j])-2):
+                bi = len(self.edges[j])-2
+                ii[j] = bi
+
+        #If random draw less than probability of assigning
+        #halo to particle with this feature vector then
+        #assign halo                                                                        
+        draw = random.random()
+        if draw<=self.php[ii]:
             return True
         else:
             return False
@@ -705,6 +710,40 @@ class pdfDT(Model):
 
 class GMM(Model):
 
+    def feature_dist(self, n_components=4):
+        """
+        Fit a GMM to the distribution of particle features
+        """
+        pX =  pfeatures.view((np.float, len(pfeatures.dtype.names)))
+        pGMM =  mixture.GMM(n_components=n_components, covariance_type='full')
+        pGMM.fit(pX)
+        self.pGMM = pGMM
+        self.pwCDF = pGMM.weights_.cumsum()
+        self.nParticles = len(pX)
+        
+
+    def assignHalo(self, fvec):
+        """
+        Marginalize fitted GMM to get P(halo exists | fvec)
+        """
+        rand = np.random.random(3)
+        pComp = self.pwCDF.searchsorted(rands[0], side='right')
+        hComp = self.hwCDF.searchsorted(rands[1], side='right')
+
+        pMVN = sp.stat.multivariate_normal(self.pGMM.means_[pComp,:],
+                                           self.pGMM.covars_[pComp,:])
+        hMVN = sp.stat.multivariate_normal(self.reg.means_[hComp,:nfeat],
+                                           self.featcov)
+        
+        pDens = pMVN.rvs(size=1)
+        hDens = hMVN.rvs(size=1)
+
+        php = hDens*self.nHalos/(pDens*self.nParticles)
+        
+        if rand[2] <= php:
+            return True
+        else:
+            return False
 
     def preprocess(self):
         """
@@ -725,6 +764,7 @@ class GMM(Model):
         arrays = [self.hfeatures, self.pred]
         histarray = munge.join_rec_arrays(arrays)
         self.X = histarray.view((np.float, len(histarray.dtype.names)))
+        self.nHalos = len(self.X)
         pdf, self.edges = self.histogram(self.X, normed=True)
 
 
@@ -745,6 +785,7 @@ class GMM(Model):
         self.icovars = np.linalg.inv(reg.covars_)
         self.predcov = np.linalg.inv(self.icovars[:, self.nfeat:, self.nfeat:])
         self.featcov = self.reg.covars_[:, :self.nfeat, :self.nfeat]
+        self.wCDF = np.cumsum(self.reg.weights_)
 
     def predict(self, fvec):
         #condition GMM on given features
