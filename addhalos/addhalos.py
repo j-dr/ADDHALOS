@@ -35,20 +35,7 @@ def addHalos(particles, features, mdl):
     count = 0
 
     for i,p in enumerate(particles):
-        #Search for correct bin in feature space
-        for j in range(len(ii)):
-            bi = bisect_left(mdl.edges[j], features[i,j][0])
-            #If higher than largest bin edge, set as last bin
-            if bi>(len(mdl.edges[j])-2):
-                bi = len(mdl.edges[j])-2
-
-            ii[j] = bi
-    
-        #If random draw less than probability of assigning
-        #halo to particle with this feature vector then
-        #assign halo
-        draw = random.random()
-        if draw<=mdl.php[ii]:
+        if mdl.assignHalo(features[i,:]):
             hpred[count] = mdl.predict(features[i,:])
             hfeat[count] = features[i,:].item()
             hpart[count] = p
@@ -99,9 +86,8 @@ def main(configfile):
     cpath = params.outpath+'/out0.rc.list'
     rhcat = haloio.combineHalos(hpath, cpath)
 
-    #combine original halos and reconstructed halos
+    #combine original and reconstructed halos
     if 'ohalopath' in params.keys():
-
         ohcat = trainio.readHL(params.ohalopath, fields=rch.dtype.names)
         h = reweight.combineRWHalos(ohcat, rhcat, params.rproxy)
         fitsio.write(params.outpath+'out0.list')
