@@ -2,7 +2,7 @@ from __future__ import print_function, division
 import numpy as np
 import scipy as sp
 from bisect import bisect_left
-from sklearn import gaussian_process, ensemble, tree
+from sklearn import gaussian_process, ensemble, tree, mixture
 from sklearn.neighbors import KernelDensity
 from sklearn.grid_search import GridSearchCV
 from sklearn.cross_validation import train_test_split
@@ -28,8 +28,16 @@ class Model:
             self.pred = pred
             self.pred_dtype = pred.dtype
             self.feat_dtype = hfeatures.dtype
-            self.nfeat = hfeatures.shape[-1]
-            self.npred = pred.shape[-1]
+            
+            if len(hfeatures.shape) == 2:
+                self.nfeat = hfeatures.shape[1]
+            else:
+                self.nfeat = 1
+            if len(pred.shape) == 2:
+                self.npred = pred.shape[1]
+            else:
+                self.npred = 1
+
             self.store = store
             self.lstep = lstep
                 
@@ -710,19 +718,17 @@ class GMM(Model):
         self.clean_pred(key=self.pred.dtype.names[0])
         arrays = [self.hfeatures, self.pred]
         histarray = munge.join_rec_arrays(arrays)
-        histarray = histarray.view((np.float, len(histarray.dtype.names)))        
-
-        self.X = np.atleast_2d(self.hfeatures.view((float, len(self.hfeatures[0])))).T
+        self.X = histarray.view((np.float, len(histarray.dtype.names)))
+        pdf, self.edges = self.histogram(self.X, normed=True)
 
 
     def train(self, n_components=4):
-
         self.X_train, self.X_test = train_test_split(self.X, test_size=0.1, random_state=0)
-
+        
         try:
             reg = mixture.GMM(n_components=n_components, covariance_type='full')
             reg.fit(self.X_train)
-                
+            
         except Exception as e:
             print(e)
             print('*****Fit Failed*****')
@@ -731,25 +737,43 @@ class GMM(Model):
         print('Fit successful')
         self.reg = reg
         self.icovars = np.linalg.inv(reg.covars_)
-        self.predcov = np.linalg.inv(self.icovars_[:, self.npred:, self.npred:])
-        self.featcov = self.reg.covars_[:,:self.nfeat,:self.nfeat]
+        self.predcov = np.linalg.inv(self.icovars[:, self.nfeat:, self.nfeat:])
+        self.featcov = self.reg.covars_[:, :self.nfeat, :self.nfeat]
 
     def predict(self, fvec):
         #condition GMM on given features
-        lil = np.dot(self.predcov, self.icovars[:, self.npred:, :self.nfeat])
-        mud = fvec - self.reg.means_[self.nfeat:]
-        condMeans = self.reg.means_[:self.npred] - np.dot(lil, mud)
-        mvn = [sp.stats.multivariable_normal(self.reg.means_[i,:], self.featcov[i,:,:])\
-                   for i in range(self.n_components)]
-        fsamples = np.array([mvn[i].pdf(fvec) for i in range(self.n_components)])
-        condWeights = self.reg.weights_*fsamples/np.sum(fsamples)
+        lil = np.array([\
+                np.dot(self.predcov[i,:,:], self.icovars[i, self.nfeat:, :self.nfeat])\
+                    for i in range(self.reg.n_components)])
+        mud = np.array([fvec - self.reg.means_[i,:self.nfeat] \
+                            for i in range(self.reg.n_components)])
+        cmo = np.array([\
+                np.dot(lil[i,:,:], mud[i,:,:].T) for i in range(self.reg.n_components)])
+        condMeans = np.array([\
+                self.reg.means_[i,self.nfeat:] - cmo[i,:,:]
+                for i in range(self.reg.n_components)])
+
+        mvn = [sp.stats.multivariate_normal(self.reg.means_[i,:self.nfeat], self.featcov[i,:,:])\
+                   for i in range(self.reg.n_components)]
+        fsamples = np.array([mvn[i].pdf(fvec) for i in range(self.reg.n_components)])
+        condWeights = np.array([\
+                self.reg.weights_[i]*fsamples[i,:]
+                for i in range(self.reg.n_components)])
+        condWeights = condWeights/np.sum(condWeights, axis=0)
 
         #Sample from conditional distribution
         #first select the component to associate input with
         X = np.empty((len(fvec), self.npred))
-        weightCDF = np.cumsum(condWeights)
+        weightCDF = np.cumsum(condWeights, axis=0)
         rand = np.random.random(len(fvec))
-        comps = weightCDF.searchsorted(rand)
+        comps = np.array([weightCDF[:,i].searchsorted(rand) for i in range(len(fvec))])
+
+        #create conditional distributions to draw from using new means
+        #and covs
+        print(condMeans)
+        print(self.predcov)
+        mvn = [[sp.stats.multivariate_normal(condMeans[i,:,j], self.predcov[i,:,:])\
+                   for i in range(self.reg.n_components)] for j in range(len(fvec))]
 
         #Sample each component associated with an input feature
         for comp in range(self.n_components):
@@ -759,3 +783,10 @@ class GMM(Model):
                 X[thisComp] = mvn[i].rvs(size=nSamples)
                     
         return X
+
+    def conditionJPDF(self, fvec):
+        """
+        Condition the joint PDF on fvec
+        """
+        pass
+
