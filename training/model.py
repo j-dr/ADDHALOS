@@ -756,6 +756,10 @@ class GMM(Model):
         mvn = [sp.stats.multivariate_normal(self.reg.means_[i,:self.nfeat], self.featcov[i,:,:])\
                    for i in range(self.reg.n_components)]
         fsamples = np.array([mvn[i].pdf(fvec) for i in range(self.reg.n_components)])
+
+        if len(fvec)==1:
+            fsamples = np.atleast_2d(fsamples).T
+
         condWeights = np.array([\
                 self.reg.weights_[i]*fsamples[i,:]
                 for i in range(self.reg.n_components)])
@@ -766,21 +770,17 @@ class GMM(Model):
         X = np.empty((len(fvec), self.npred))
         weightCDF = np.cumsum(condWeights, axis=0)
         rand = np.random.random(len(fvec))
-        comps = np.array([weightCDF[:,i].searchsorted(rand) for i in range(len(fvec))])
+        comps = np.array([weightCDF[:,i].searchsorted(rand[i], side='right')\
+                              for i in range(len(fvec))])
 
         #create conditional distributions to draw from using new means
         #and covs
-        print(condMeans)
-        print(self.predcov)
-        mvn = [[sp.stats.multivariate_normal(condMeans[i,:,j], self.predcov[i,:,:])\
-                   for i in range(self.reg.n_components)] for j in range(len(fvec))]
-
+        mvn = [sp.stats.multivariate_normal(condMeans[c,:,i], self.predcov[c,:,:])\
+                    for i, c in enumerate(comps)]
+        
         #Sample each component associated with an input feature
-        for comp in range(self.n_components):
-            thisComp = (comps == comp)
-            nSamples = thisComp.sum()
-            if not nSamples:
-                X[thisComp] = mvn[i].rvs(size=nSamples)
+        for i in range(len(comps)):
+            X[i] = mvn[i].rvs(size=1)
                     
         return X
 
