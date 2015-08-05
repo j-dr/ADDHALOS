@@ -25,7 +25,7 @@ except ImportError, e:
 class Model:
     __metaclass__ = ABCMeta
 
-    def __init__(self, hfeatures, pfeatures, pred, pmod=None, store=False, lstep=None):
+    def __init__(self, hfeatures, pfeatures, pred, pmod=None, store=False, lstep=None, **kwargs):
 
         #If no pickle file provided, use features to construct object
         if pmod==None:
@@ -46,6 +46,8 @@ class Model:
 
             self.store = store
             self.lstep = lstep
+            for kwarg in kwargs.keys():
+                setattr(self, kwarg, kwargs[kwarg])
                 
         else:
             raise NotImplementedError
@@ -710,12 +712,12 @@ class pdfDT(Model):
 
 class GMM(Model):
 
-    def feature_dist(self, n_components=4):
+    def feature_dist(self):
         """
         Fit a GMM to the distribution of particle features
         """
-        pX =  pfeatures.view((np.float, len(pfeatures.dtype.names)))
-        pGMM =  mixture.GMM(n_components=n_components, covariance_type='full')
+        pX =  self.pfeatures.view((np.float, len(self.pfeatures.dtype.names)))
+        pGMM = mixture.GMM(n_components=self.n_components, covariance_type='full')
         pGMM.fit(pX)
         self.pGMM = pGMM
         self.pwCDF = pGMM.weights_.cumsum()
@@ -750,6 +752,8 @@ class GMM(Model):
         Preprocess the data that we will fit the model to
 
         """
+        if not hasattr(self, 'n_components'):
+            raise AttributeError("n_components was not defined! Please define upon model instantiation")
         self.preproc_hist()
         self.feature_dist()
 
@@ -758,7 +762,6 @@ class GMM(Model):
             self.pfeatures=None
             self.pred = None
         
-
     def preproc_hist(self):
         self.clean_pred(key=self.pred.dtype.names[0])
         arrays = [self.hfeatures, self.pred]
@@ -767,12 +770,11 @@ class GMM(Model):
         self.nHalos = len(self.X)
         pdf, self.edges = self.histogram(self.X, normed=True)
 
-
-    def train(self, n_components=4):
+    def train(self):
         self.X_train, self.X_test = train_test_split(self.X, test_size=0.1, random_state=0)
         
         try:
-            reg = mixture.GMM(n_components=n_components, covariance_type='full')
+            reg = mixture.GMM(n_components=self.n_components, covariance_type='full')
             reg.fit(self.X_train)
             
         except Exception as e:
@@ -791,25 +793,25 @@ class GMM(Model):
         #condition GMM on given features
         lil = np.array([\
                 np.dot(self.predcov[i,:,:], self.icovars[i, self.nfeat:, :self.nfeat])\
-                    for i in range(self.reg.n_components)])
+                    for i in range(self.n_components)])
         mud = np.array([fvec - self.reg.means_[i,:self.nfeat] \
-                            for i in range(self.reg.n_components)])
+                            for i in range(self.n_components)])
         cmo = np.array([\
-                np.dot(lil[i,:,:], mud[i,:,:].T) for i in range(self.reg.n_components)])
+                np.dot(lil[i,:,:], mud[i,:,:].T) for i in range(self.n_components)])
         condMeans = np.array([\
                 self.reg.means_[i,self.nfeat:] - cmo[i,:,:]
-                for i in range(self.reg.n_components)])
+                for i in range(self.n_components)])
 
         mvn = [sp.stats.multivariate_normal(self.reg.means_[i,:self.nfeat], self.featcov[i,:,:])\
-                   for i in range(self.reg.n_components)]
-        fsamples = np.array([mvn[i].pdf(fvec) for i in range(self.reg.n_components)])
+                   for i in range(self.n_components)]
+        fsamples = np.array([mvn[i].pdf(fvec) for i in range(self.n_components)])
 
         if len(fvec)==1:
             fsamples = np.atleast_2d(fsamples).T
 
         condWeights = np.array([\
                 self.reg.weights_[i]*fsamples[i,:]
-                for i in range(self.reg.n_components)])
+                for i in range(self.n_components)])
         condWeights = condWeights/np.sum(condWeights, axis=0)
 
         #Sample from conditional distribution
