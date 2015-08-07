@@ -728,7 +728,7 @@ class GMM(Model):
         """
         Marginalize fitted GMM to get P(halo exists | fvec)
         """
-        rand = np.random.random(3)
+        rands = np.random.random(3)
         pComp = self.pwCDF.searchsorted(rands[0], side='right')
         hComp = self.hwCDF.searchsorted(rands[1], side='right')
 
@@ -742,7 +742,7 @@ class GMM(Model):
 
         php = hDens*self.nHalos/(pDens*self.nParticles)
         
-        if rand[2] <= php:
+        if rands[2] <= php:
             return True
         else:
             return False
@@ -770,7 +770,7 @@ class GMM(Model):
         self.nHalos = len(self.X)
         pdf, self.edges = self.histogram(self.X, normed=True)
 
-    def train(self):
+    def train(self, cv=None):
         self.X_train, self.X_test = train_test_split(self.X, test_size=0.1, random_state=0)
         
         try:
@@ -787,7 +787,7 @@ class GMM(Model):
         self.icovars = np.linalg.inv(reg.covars_)
         self.predcov = np.linalg.inv(self.icovars[:, self.nfeat:, self.nfeat:])
         self.featcov = self.reg.covars_[:, :self.nfeat, :self.nfeat]
-        self.wCDF = np.cumsum(self.reg.weights_)
+        self.hwCDF = np.cumsum(self.reg.weights_)
 
     def predict(self, fvec):
         #condition GMM on given features
