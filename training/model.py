@@ -732,13 +732,13 @@ class GMM(Model):
         pComp = self.pwCDF.searchsorted(rands[0], side='right')
         hComp = self.hwCDF.searchsorted(rands[1], side='right')
 
-        pMVN = sp.stat.multivariate_normal(self.pGMM.means_[pComp,:],
+        pMVN = sp.stats.multivariate_normal(self.pGMM.means_[pComp,:],
                                            self.pGMM.covars_[pComp,:])
-        hMVN = sp.stat.multivariate_normal(self.reg.means_[hComp,:nfeat],
+        hMVN = sp.stats.multivariate_normal(self.reg.means_[hComp,:nfeat],
                                            self.featcov)
         
-        pDens = pMVN.rvs(size=1)
-        hDens = hMVN.rvs(size=1)
+        pDens = pMVN.pdf(fvec)
+        hDens = hMVN.pdf(fvec)
 
         php = hDens*self.nHalos/(pDens*self.nParticles)
         
