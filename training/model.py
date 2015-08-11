@@ -728,21 +728,22 @@ class GMM(Model):
         """
         Marginalize fitted GMM to get P(halo exists | fvec)
         """
-        rands = np.random.random(3)
-        pComp = self.pwCDF.searchsorted(rands[0], side='right')
-        hComp = self.hwCDF.searchsorted(rands[1], side='right')
 
-        pMVN = sp.stats.multivariate_normal(self.pGMM.means_[pComp,:],
-                                           self.pGMM.covars_[pComp,:])
-        hMVN = sp.stats.multivariate_normal(self.reg.means_[hComp,:nfeat],
-                                           self.featcov)
+        pDens = np.array([sp.stats.multivariate_normal.pdf(
+                fvec, mean=self.pGMM.means_[i,:],
+                cov=self.pGMM.covars_[i,:])*self.pGMM.weights_[i]
+                for i in range(self.n_components)])
+        hDens = np.array([sp.stats.multivariate_normal.pdf(
+                fvec, mean=self.reg.means_[i,:self.nfeat],
+                self.featcov[i,:,:])*self.reg.weights_[i]
+                for i in range(self.n_components)])
+
+        pDens = pDens.sum()
+        hDens = hDens.sum()
         
-        pDens = pMVN.pdf(fvec)
-        hDens = hMVN.pdf(fvec)
-
         php = hDens*self.nHalos/(pDens*self.nParticles)
         
-        if rands[2] <= php:
+        if np.random.random() <= php:
             return True
         else:
             return False
