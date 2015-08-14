@@ -13,6 +13,7 @@ import numpy as np
 from bisect import bisect_left
 from sklearn.externals import joblib
 from glob import glob
+from mpi4py import MPI
 
 
 def addHalos(particles, features, mdl):
@@ -36,8 +37,9 @@ def addHalos(particles, features, mdl):
 
     for i,p in enumerate(particles):
         if mdl.assignHalo(features[i,:]):
-            hpred[count] = mdl.predict(features[i,:])
-            hfeat[count] = features[i,:].item()
+            fvec = features[i,:].view(float).reshape((1,mdl.nfeat))
+            hpred[count] = mdl.predict(fvec)
+            hfeat[count] = fvec
             hpart[count] = p
             count+=1
 
@@ -61,36 +63,78 @@ def addHalos(particles, features, mdl):
 
 def main(configfile):
     
-    #Read in parameters from the configuration file
-    params = haloio.readConfigFile(configfile)
-
-    mdl = joblib.load(params.modelpath)
-
-    #Load the particle locations/velocities and feature data
-    for pp in params.pplist:
-        particles = trainio.readGadgetParticles(pp)
-        features = trainio.readData(params.featuredict[pp])
-        features = np.atleast_2d(features).T
-
-        #Add the halos
-        halos = addHalos(particles, features, mdl)
-
-        #Write the halos
-        pps = pp.split('/')
-        op = params.outpath+'{0}.halo'.format(pps[-1])
-        fitsio.write(op, halos)
-        
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    nprocs = comm.Get_size()
     
-    #combine halo files into reconstructed halo catalog
-    hpath = params.outpath+'*.halo'
-    cpath = params.outpath+'/out0.rc.list'
-    rhcat = haloio.combineHalos(hpath, cpath)
+    if rank == 0:
+        #Read in parameters from the configuration file
+        params = haloio.readConfigFile(configfile)
+        modelpath = configfile.modelpath
+        featuredict = configfile.featuredict
+        outpath = configfile.outpath
+    else:
+        modelpath = None
+        featuredict = None
+        outpath = None
+    
+    #send path to model to all processors
+    modelpath = comm.broadcast(modelpath, root=0)
+    featuredict = comm.broadcast(featuredict, root=0)
+    outpath = comm.broadcast(outpath, root=0)
 
-    #combine original and reconstructed halos
-    if 'ohalopath' in params.keys():
-        ohcat = trainio.readHL(params.ohalopath, fields=rch.dtype.names)
-        h = reweight.combineRWHalos(ohcat, rhcat, params.rproxy)
-        fitsio.write(params.outpath+'out0.list')
+    if rank != 0:
+        #if worker, load model
+        mdl = joblib.load(modelpath)
+
+    sendcount = 0
+    while True:
+        if rank == 0:
+            if sendcount == len(pplist):
+                for i in range(nprocs-1):
+                    #if all work done, send terminate signal to workers
+                    #and break from loop
+                    comm.send(None, dest=i+1, tag=-1)
+                break
+            else:
+                #else wait for ready signal from worker
+                comm.recieve(msg, source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
+                comm.send(pplist[sendcount], dest=status.Get_source(), tag=0)
+                sendcount+=1
+        else:
+            #Worker only ever sends ready signals
+            comm.send(None, dest=0)
+            comm.recieve(pp, source=0, tag=MPI.ANY_TAG, status=status)
+
+            if status.Get_tag == -1:
+                #If all work done, break
+                break
+            else:
+                print('[{0}]: Adding halos to {1}'.format(rank, pp))
+                particles = trainio.readGadgetParticles(pp)
+                features = trainio.readData(featuredict[pp])
+                features = np.atleast_2d(features).T
+                
+                #Add the halos
+                halos = addHalos(particles, features, mdl)
+
+                #Write the halos
+                pps = pp.split('/')
+                op = outpath+'{0}.halo'.format(pps[-1])
+                fitsio.write(op, halos)
+
+
+    if rank == 0:
+        #combine halo files into reconstructed halo catalog
+        hpath = params.outpath+'*.halo'
+        cpath = params.outpath+'/out0.rc.list'
+        rhcat = haloio.combineHalos(hpath, cpath)
+
+        #combine original and reconstructed halos
+        if 'ohalopath' in params.keys():
+            ohcat = trainio.readHL(params.ohalopath, fields=rch.dtype.names)
+            h = reweight.combineRWHalos(ohcat, rhcat, params.rproxy)
+            fitsio.write(params.outpath+'out0.list')
 
 
 if __name__=='__main__':
