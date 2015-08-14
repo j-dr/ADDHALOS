@@ -70,24 +70,28 @@ def main(configfile):
     if rank == 0:
         #Read in parameters from the configuration file
         params = haloio.readConfigFile(configfile)
-        modelpath = configfile.modelpath
-        featuredict = configfile.featuredict
-        outpath = configfile.outpath
+        modelpath = params.modelpath
+        featuredict = params.featuredict
+        outpath = params.outpath
+        pplist = params.pplist
     else:
         modelpath = None
         featuredict = None
         outpath = None
+        pplist = []
     
-    #send path to model to all processors
-    modelpath = comm.broadcast(modelpath, root=0)
-    featuredict = comm.broadcast(featuredict, root=0)
-    outpath = comm.broadcast(outpath, root=0)
+    #send path info to all processors
+    modelpath = comm.bcast(modelpath, root=0)
+    featuredict = comm.bcast(featuredict, root=0)
+    outpath = comm.bcast(outpath, root=0)
 
     if rank != 0:
         #if worker, load model
         mdl = joblib.load(modelpath)
 
     sendcount = 0
+    status = MPI.Status()
+
     while True:
         if rank == 0:
             if sendcount == len(pplist):
@@ -98,14 +102,19 @@ def main(configfile):
                 break
             else:
                 #else wait for ready signal from worker
-                comm.recieve(msg, source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
-                comm.send(pplist[sendcount], dest=status.Get_source(), tag=0)
+                print('Number of blocks sent to workers: {0}'.format(sendcount))
+                comm.recv(source=MPI.ANY_SOURCE, tag=1, status=status)
+                comm.send(obj=pplist[sendcount], dest=status.Get_source(), tag=11)
+                print('Master sent {0} to {1}'.format(pplist[sendcount], status.Get_source()))
                 sendcount+=1
         else:
             #Worker only ever sends ready signals
-            comm.send(None, dest=0)
-            comm.recieve(pp, source=0, tag=MPI.ANY_TAG, status=status)
-
+            comm.send(dest=0, tag=1)
+            print('Worker {0} requests new block'.format(rank))
+            pp = comm.recv(source=0, tag=MPI.ANY_TAG, status=status)
+            print('Worker {0} recieved block: {1}'.format(rank, pp))
+            print('Count: {0}'.format(status.Get_count()))
+            print('Tag: {0}'.format(status.Get_tag()))
             if status.Get_tag == -1:
                 #If all work done, break
                 break
