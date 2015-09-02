@@ -2,12 +2,11 @@ from __future__ import print_function, division
 if __name__=='__main__':
     import matplotlib as mpl
     mpl.use('Agg')
-import model
-import random
-import trainio
-import argparse
+from ..training import model, trainio
 import haloio
 import reweight
+import random
+import argparse
 import fitsio
 import numpy as np
 from bisect import bisect_left
@@ -98,7 +97,7 @@ def main(configfile):
                 for i in range(nprocs-1):
                     #if all work done, send terminate signal to workers
                     #and break from loop
-                    comm.send(None, dest=i+1, tag=-1)
+                    comm.send(None, dest=i+1, tag=99)
                 break
             else:
                 #else wait for ready signal from worker
@@ -114,8 +113,7 @@ def main(configfile):
             pp = comm.recv(source=0, tag=MPI.ANY_TAG, status=status)
             print('Worker {0} recieved block: {1}'.format(rank, pp))
             print('Count: {0}'.format(status.Get_count()))
-            print('Tag: {0}'.format(status.Get_tag()))
-            if status.Get_tag == -1:
+            if status.Get_tag == 99:
                 #If all work done, break
                 break
             else:

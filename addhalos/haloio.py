@@ -7,13 +7,18 @@ import fitsio
 class Config:
     
     def  __init__(self, pdict):
-
+        self.modelparams = {}
         for key in pdict.keys():
-            setattr(self,key,pdict[key])
+            if 'model' in key.lower():
+                mp = pdict[key].split('model')[-1]
+                self.modelparams[key] = mp
+            else:
+                setattr(self,key,pdict[key])
 
         self.getParticlePaths()
         self.getFeaturePaths()
         self.getFeaturePaths(halos=True)
+        self.getPredPaths()
 
     def getParticlePaths(self):
         """
@@ -32,13 +37,15 @@ class Config:
 
                 self.pplist.append(p)
 
-    def getFeaturePaths(self, halos-False):
+    def getFeaturePaths(self, halos=False):
         """
         Pair feature paths with the feature names to be
         read in from them
         """
         paths = []
         features = []
+        if halos!=False:
+            zs = []
 
         if halos==False:
             self.featuredict = {}
@@ -64,40 +71,85 @@ class Config:
                         
                         paths.append(ps[0])
                         features.append(ps[1])
+                
+                    temp = {}
+                    for j in range(len(paths)):
+                        if paths[j] not in temp.keys():
+                            temp.update({paths[j]:[features[j]]})
+                        else:
+                            temp[paths[j]].append(features[j])
+                    self.featuredict.update({self.pplist[i]:temp})
+                    paths = []
+                    features = []
+
             else:
                 p = fp.readline()
                 f = 0
                 while p!='':
                     p = p.strip()
                     ps = p.split()
-                    if len(ps)!=2:
+                    if len(ps)!=3:
                         print("Incorrectly formatted feature file!\n "\
-                                  "Please make sure number of columns==2\n "\
+                                  "Please make sure number of columns==3\n "\
                                   "and total number of files is equal to\n "\
                                   "Number of features * Number of paths in\n "\
                                   "particlepath")
                         raise
-                    
-                    paths.append(ps[0])
-                    features.append(ps[1])
+                    zs.append(ps[0])                    
+                    paths.append(ps[1])
+                    features.append(ps[2])
                     p = fp.readline()
-                    
                 
                 temp = {}
                 for j in range(len(paths)):
                     if paths[j] not in temp.keys():
-                        print(paths[j])
                         temp.update({paths[j]:[features[j]]})
                     else:
                         temp[paths[j]].append(features[j])
 
-                if halo==False:
-                    self.featuredict.update({self.pplist[i]:temp})
+                    self.hfeaturedict = temp
+                    self.zs = zs
 
+    def getPredPaths(self):
+        """
+        Pair feature paths with the feature names to be
+        read in from them
+        """
+        paths = []
+        features = []
+        zs = []
+        self.preddict = {}
+        path = self.hpredpath
+        
+        with open(path,'r') as fp:
+            p = fp.readline()
+            f = 0
+            while p!='':
+                p = p.strip()
+                ps = p.split()
+                if len(ps)!=3:
+                    print("Incorrectly formatted feature file!\n "\
+                              "Please make sure number of columns==3\n "\
+                              "and total number of files is equal to\n "\
+                              "Number of features * Number of paths in\n "\
+                              "particlepath")
+                    raise
+                zs.append(ps[0])                    
+                paths.append(ps[1])
+                features.append(ps[2])
+                p = fp.readline()
                 
-                paths = []
-                features = []
-
+            temp = {}
+            for j in range(len(paths)):
+                if paths[j] not in temp.keys():
+                    temp.update({paths[j]:[features[j]]})
+                else:
+                    temp[paths[j]].append(features[j])
+                    
+                self.preddict = temp
+                if set(zs)!=set(self.zs):
+                    raise ValueError("The redshifts in the pred files do not\n "\
+                                     "match the redshifts in the halo feature files!\n")
 
 
 def readConfigFile(fname):

@@ -9,6 +9,7 @@ from sklearn.neighbors import KernelDensity
 from sklearn.grid_search import GridSearchCV
 from sklearn.cross_validation import train_test_split
 from sklearn.metrics import r2_score, make_scorer
+from sklearn.externals import joblib
 from abc import ABCMeta, abstractmethod
 from astroML.density_estimation import bayesian_blocks
 import random
@@ -48,6 +49,9 @@ class Model:
             self.lstep = lstep
             for kwarg in kwargs.keys():
                 setattr(self, kwarg, kwargs[kwarg])
+                #if n_pcomponents not given, set to n_components
+                if (kwarg=='n_components') and ('n_pcomponents' not in kwargs.keys()):
+                    setattr(self, 'n_pcomponents', kwargs[kwarg])
                 
         else:
             raise NotImplementedError
@@ -86,6 +90,7 @@ class Model:
         else:
             ii, = np.where(self.pred[key]!=0)
         self.pred = self.pred[ii]
+        self.pred[key] = np.log10(self.pred[key])
         self.hfeatures = self.hfeatures[ii]
 
     def feature_dist(self):
@@ -399,6 +404,10 @@ class RF(Model):
             self.hfeatures = None
             self.pfeatures = None
             self.pred = None
+            if hasattr(self, 'path'):
+                joblib.dump(self, self.path)
+
+
             
     def binedges(self):
         """
@@ -512,6 +521,9 @@ class pdfRF(Model):
             self.X = None
             self.y = None
             self.pred = None
+            if hasattr(self, 'path'):
+                joblib.dump(self, self.path)
+
 
     def predict(self, fvec):
         pdf = self.reg.predict_proba(fvec)
@@ -568,6 +580,9 @@ class DT(Model):
             self.hfeatures = None
             self.pfeatures = None
             self.pred = None
+            if hasattr(self, 'path'):
+                joblib.dump(self, self.path)
+
             
     def binedges(self):
         """
@@ -682,6 +697,9 @@ class pdfDT(Model):
             self.X = None
             self.y = None
             self.pred = None
+            if hasattr(self, 'path'):
+                joblib.dump(self, self.path)
+
 
     def predict(self, fvec):
         pdf = self.reg.predict_proba(fvec)
@@ -717,7 +735,11 @@ class GMM(Model):
         Fit a GMM to the distribution of particle features
         """
         pX =  self.pfeatures.view((np.float, len(self.pfeatures.dtype.names)))
-        pGMM = mixture.GMM(n_components=self.n_components, covariance_type='full')
+        if hasattr(self, 'n_pcomponents'):
+            n_pcomponents = self.n_pcomponents
+        else:
+            n_pcomponents = self.n_components
+        pGMM = mixture.GMM(n_components=n_pcomponents, covariance_type='full')
         pGMM.fit(pX)
         self.pGMM = pGMM
         self.pwCDF = pGMM.weights_.cumsum()
@@ -732,10 +754,10 @@ class GMM(Model):
         pDens = np.array([sp.stats.multivariate_normal.pdf(
                 fvec, mean=self.pGMM.means_[i,:],
                 cov=self.pGMM.covars_[i,:])*self.pGMM.weights_[i]
-                for i in range(self.n_components)])
+                for i in range(self.n_pcomponents)])
         hDens = np.array([sp.stats.multivariate_normal.pdf(
                 fvec, mean=self.reg.means_[i,:self.nfeat],
-                self.featcov[i,:,:])*self.reg.weights_[i]
+                cov=self.featcov[i,:,:])*self.reg.weights_[i]
                 for i in range(self.n_components)])
 
         pDens = pDens.sum()
@@ -789,6 +811,9 @@ class GMM(Model):
         self.predcov = np.linalg.inv(self.icovars[:, self.nfeat:, self.nfeat:])
         self.featcov = self.reg.covars_[:, :self.nfeat, :self.nfeat]
         self.hwCDF = np.cumsum(self.reg.weights_)
+        if hasattr(self, 'path'):
+            joblib.dump(self, self.path)
+
 
     def predict(self, fvec):
         #condition GMM on given features
@@ -838,7 +863,9 @@ class GMM(Model):
 
         nSamples = 1e6
         samples = self.reg.sample(n_samples=nSamples)
-        
+        #quick fix for better plotting
+        samples = np.log10(samples)
+
         if self.pred == None:
             if hasTriangle:
                 figure = triangle.corner(samples, labels=labels,
