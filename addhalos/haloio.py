@@ -4,14 +4,59 @@ import numpy as np
 import fitsio
 
 
+class Snapshot:
+
+    def __init__(self, z, hlistpath, blockdict):
+        self.z = z
+        self.hlist = Hlist(hlistpath)
+        self.blocks = self._blocks(blockdict)
+
+    def _blocks(self, blockdict):
+        blocks = []
+        for key in blockdict:
+            blocks.append(Block(key, blockdict[key]))
+
+class Block:
+
+    def __init__(self, particlepath, featuredict):
+        self.particlepath = particlepath
+        self.featuredict = featuredict
+
+class Hlist:
+    
+    def __init__(self, hlistpath):
+        self.hlistpath = hlistpath
+
+class TrainingData:
+
+    def __init__(self, snapdict):
+        self.snapshots = self._snapshots(snapdict)
+
+    def _snapshots(self, snapdict):
+        snapshots = []
+        for key in snapdict.keys():
+            snapshots.append(key, snapdict[key]['hlist'], snapdict[key]['blocks'])
+
+class ValidationData:
+    
+    def __init__(self, hlistpath, blockdict):
+        self.hlist = Hlist(hlistpath)
+        self.blocks = self._blocks(blockdict)
+        
+    def _blocks(self, blockdict):
+        blocks = []
+        for key in blockdict:
+            blocks.append(Block(key, blockdict[key]))
+
 class Config:
     
     def  __init__(self, pdict):
         self.modelparams = {}
         for key in pdict.keys():
             if 'model' in key.lower():
-                mp = pdict[key].split('model')[-1]
-                self.modelparams[key] = mp
+                mp = key.split('model')[-1]
+                self.modelparams[mp] = pdict[key]
+
             else:
                 setattr(self,key,pdict[key])
 
@@ -49,6 +94,7 @@ class Config:
 
         if halos==False:
             self.featuredict = {}
+            self.pfeaturedict = {}
             path = self.featurepath
         else:
             self.hfeaturedict = {}
@@ -78,10 +124,14 @@ class Config:
                             temp.update({paths[j]:[features[j]]})
                         else:
                             temp[paths[j]].append(features[j])
+                        if paths[j] not in self.pfeaturedict.keys():
+                            self.pfeaturedict[paths[j]] = [features[j]]
+                        else:
+                            self.pfeaturedict[paths[j]].append(features[j])
+
                     self.featuredict.update({self.pplist[i]:temp})
                     paths = []
                     features = []
-
             else:
                 p = fp.readline()
                 f = 0
