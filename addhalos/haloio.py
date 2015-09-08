@@ -4,10 +4,9 @@ import numpy as np
 import fitsio
 
 
-class Snapshot:
-
-    def __init__(self, z, hlistpath, blockdict):
-        self.z = z
+class _BaseOutput(object):
+    
+    def __init__(self, hlistpath, blockdict):
         self.hlist = Hlist(hlistpath)
         self.blocks = self._blocks(blockdict)
 
@@ -15,6 +14,17 @@ class Snapshot:
         blocks = []
         for key in blockdict:
             blocks.append(Block(key, blockdict[key]))
+
+class Snapshot(_BaseOutput):
+
+    def __init__(self, z, hlistpath, blockdict):
+        self.z = z
+        super(self.__class__, self).__init__(hlistpath, blockdict)
+
+class Lightcone(_BaseOutput):
+    
+    def __init__(self, hlistpath, blockdict):
+        super(self.__class__, self).__init__(hlistpath, blockdict)
 
 class Block:
 
@@ -24,8 +34,9 @@ class Block:
 
 class Hlist:
     
-    def __init__(self, hlistpath):
+    def __init__(self, hlistpath, featuredict):
         self.hlistpath = hlistpath
+        self.featuredict = featuredict
 
 class TrainingData:
 
@@ -220,6 +231,11 @@ def readConfigFile(fname):
             ls = l.split()
 
             if len(ls)==1:
+                if ls[0]=='featurelist':
+                    keys.append(ls[0])
+                    values.append(ls[1])
+                    l = fp.readline()
+                    continue
                 print(ls)
                 print("Only one columns detected in a row in the config file.\n"\
                       "Please check your formatting")
