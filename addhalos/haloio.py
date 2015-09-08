@@ -48,7 +48,7 @@ class TrainingData:
         for key in snapdict.keys():
             snapshots.append(key, snapdict[key]['hlist'], snapdict[key]['blocks'])
 
-class ValidationData:
+class ValidatioData:
     
     def __init__(self, hlistpath, blockdict):
         self.hlist = Hlist(hlistpath)
@@ -70,11 +70,59 @@ class Config:
 
             else:
                 setattr(self,key,pdict[key])
-
+        
+        self.genTrainingData()
+        self.genValidationData()
         self.getParticlePaths()
         self.getFeaturePaths()
         self.getFeaturePaths(halos=True)
         self.getPredPaths()
+
+    def genTrainingData(self):
+
+        trainsnaps = {}
+        if not hasattr(self, 'trainsnaps'):
+            print('[Config] No training data found')
+            return
+
+        try:
+            with open(self.trainsnaps, 'r') as fp:
+                while True:
+                    p = fp.readline()
+                    p = p.strip()
+                    if p=='':
+                        break
+                    trainsnaps[p] = {}
+        except:
+            #If can't open try using as globpath
+            ts = glob(self.trainsnaps)
+            for t in ts:
+                trainsnaps[t] = {}
+
+        for i, snap in enumerate(trainsnaps.keys()):
+            ssdir = snap.split('/')
+            snap['hlist'] = '{0}/{1}.hlist'.format(self.hlistbase, ssdir[-1])
+    
+            blockglob = '{0}/{1}*'.format(snap, self.trainblockbase)
+            blocks = glob(blockglob)
+            trainsnaps[snap]['blocks'] = {b:{} for b in blocks}
+
+            for block in trainsnap[snap]['blocks'].keys():
+                bs = block.split('/')
+                ppr = '/'.join(bs[-2:])
+                trainsnap[snap][block]['featpath'] = {'{0}/{1}.{2}'.format(self.trainpfeaturebase, ppr, feat)\
+                                                          :feat for feat in self.featurelist}
+
+        self.trainingData = TrainingData(trainsnaps)
+            
+
+        #After constructing dictonary w/ all training info,
+        #go ahead and turn it into objects
+
+        self.trainsnaps = []
+        for snap in trainsnaps
+
+        
 
     def getParticlePaths(self):
         """
