@@ -1,63 +1,113 @@
 from __future__ import print_function
+from ..training import trainio
 from glob import glob
 import numpy as np
 import fitsio
+import os
 
 
-class _BaseOutput(object):
+class _BaseParticles(object):
     
-    def __init__(self, hlistpath, blockdict):
-        self.hlist = Hlist(hlistpath)
-        self.blocks = self._blocks(blockdict)
+    def __init__(self, hlistdict, blockdict):
+        self._hlist(hlistdict)
+        self._blocks(blockdict)
 
     def _blocks(self, blockdict):
-        blocks = []
+        self.blocks = []
         for key in blockdict:
-            blocks.append(Block(key, blockdict[key]))
+            self.blocks.append(Block(key, blockdict[key]))
 
-class Snapshot(_BaseOutput):
+    def _hlist(self, hlistdict):
+        key = hlistdict.keys()[0]
+        self.hlist = Hlist(key, hlistdict[key])
 
-    def __init__(self, z, hlistpath, blockdict):
-        self.z = z
-        super(self.__class__, self).__init__(hlistpath, blockdict)
+class _BaseData(object):
 
-class Lightcone(_BaseOutput):
+    def __init__(self, featuredict):
+        self.featuredict = featuredict
+
+    def loadFeatures(self):
+        return trainio.readData(self.featuredict)
+
+class Snapshot(_BaseParticles):
+
+    def __init__(self, path, snapdict):
+        self.snappath = path
+        self.z = snapdict['z']
+        super(self.__class__, self).__init__(snapdict['hlist'], snapdict['blocks'])
+
+    def loadTrainingData(self):
+        for i, block in enumerate(self.blocks):
+            if i==0:
+                pfeat = block.loadFeatures()
+            else:
+                pfeat = np.hstack([pfeat, block.loadFeatures()])
+
+        hfeat = self.hlist.loadFeatures()
+        pred = self.hlist.loadPreds()
+
+        return pfeat, hfeat, pred
+        
+class Lightcone(_BaseParticles):
     
-    def __init__(self, hlistpath, blockdict):
-        super(self.__class__, self).__init__(hlistpath, blockdict)
+    def __init__(self, hlistdict, blockdict):
+        super(self.__class__, self).__init__(hlistdict, blockdict)
 
-class Block:
+class Block(_BaseData):
 
-    def __init__(self, particlepath, featuredict):
+    def __init__(self, particlepath, blockdict):
         self.particlepath = particlepath
-        self.featuredict = featuredict
+        super(self.__class__, self).__init__(blockdict['features'])
 
-class Hlist:
+class Hlist(_BaseData):
     
-    def __init__(self, hlistpath, featuredict):
+    def __init__(self, hlistpath, hlistdict):
         self.hlistpath = hlistpath
-        self.featuredict = featuredict
+        self.preddict = hlistdict['preds']
+        super(self.__class__, self).__init__(hlistdict['features'])
 
+    def loadPreds(self):
+        return trainio.readData(self.preddict)
+        
 class TrainingData:
 
     def __init__(self, snapdict):
-        self.snapshots = self._snapshots(snapdict)
+        self._snapshots(snapdict)
 
     def _snapshots(self, snapdict):
-        snapshots = []
+        self.snapshots = []
         for key in snapdict.keys():
-            snapshots.append(key, snapdict[key]['hlist'], snapdict[key]['blocks'])
+            self.snapshots.append(Snapshot(key, snapdict[key]))
 
-class ValidatioData:
+    def genTrainingArrays(self):
+        
+        for i, snap in enumerate(self.snapshots):
+            if i==0:
+                pf, hf, pr = snap.loadTrainingData()
+            else:
+                p, h, r = snap.loadTrainingData()
+                pf = np.hstack([pf, p])
+                del p
+                hf = np.hstack([hf, h])
+                del h
+                pr = np.hstack([pr, r])
+                del r
+
+        self.pfeatures = pf
+        self.hfeatures = hf
+        self.pred = pr
+
+class ValidationData:
     
-    def __init__(self, hlistpath, blockdict):
-        self.hlist = Hlist(hlistpath)
+    def __init__(self, hlistdict, blockdict):
+        self.hlist = Hlist(hlistdict)
         self.blocks = self._blocks(blockdict)
         
     def _blocks(self, blockdict):
-        blocks = []
+        self.blocks = []
         for key in blockdict:
-            blocks.append(Block(key, blockdict[key]))
+            self.blocks.append(Block(key, blockdict[key]))
+        
 
 class Config:
     
@@ -69,17 +119,14 @@ class Config:
                 self.modelparams[mp] = pdict[key]
 
             else:
+                if key=='featurelist':
+                    print(pdict[key])
                 setattr(self,key,pdict[key])
         
         self.genTrainingData()
         self.genValidationData()
-        self.getParticlePaths()
-        self.getFeaturePaths()
-        self.getFeaturePaths(halos=True)
-        self.getPredPaths()
 
     def genTrainingData(self):
-
         trainsnaps = {}
         if not hasattr(self, 'trainsnaps'):
             print('[Config] No training data found')
@@ -92,179 +139,106 @@ class Config:
                     p = p.strip()
                     if p=='':
                         break
-                    trainsnaps[p] = {}
+                    ps = p.split()
+                    trainsnaps[ps[0]] = {'z':float(ps[1])}
+
         except:
             #If can't open try using as globpath
             ts = glob(self.trainsnaps)
+            zs = np.genfromtxt(self.trainsnapz, dtype=None, names=['tag','z'])
+            ztags = ['0'+str(zt) if zt>9 else '00'+str(zt) for zt in zs['tag']]
             for t in ts:
-                trainsnaps[t] = {}
+                st = t.split('/')
+                zii = np.array([True if str(zt) in st[-1] else False for zt in ztags])
+                if len(zii[zii==True])!=1:
+                    raise(ValueError('Number of matching redshifts for {0} != 1'.format(t)))
+
+                trainsnaps[t] = {'z':zs['z'][zii][0]}
 
         for i, snap in enumerate(trainsnaps.keys()):
-            ssdir = snap.split('/')
-            snap['hlist'] = '{0}/{1}.hlist'.format(self.hlistbase, ssdir[-1])
+            sz = trainsnaps[snap]['z']
+            ssnap = snap.split('/')
+            ssnum = ssnap[-1].split('_')
+            ssnum = ssnum[-1].split('.')[0]
+            hlistpath = '{0}/{1}_{2}.list'.format(self.trainhlistpath, self.trainhlistbase, ssnum)
+            hlb = hlistpath.split('/')
+            hlb[-1] = hlb[-1].split('.')[0]
+            trainsnaps[snap]['hlist'] = {hlistpath:{}}
+            fpaths = ['{0}/{1}/{2}.{3}'.format(self.trainhfeaturepath, ssnap[-1], hlb[-1], feat)\
+                      if feat!='z' else sz for feat in self.featurelist]
+            flist = [[f] for f in self.featurelist]
+            trainsnaps[snap]['hlist'][hlistpath]['features'] = dict(zip(fpaths, flist))
+            trainsnaps[snap]['hlist'][hlistpath]['preds'] = {hlistpath:self.predlist}
     
             blockglob = '{0}/{1}*'.format(snap, self.trainblockbase)
             blocks = glob(blockglob)
             trainsnaps[snap]['blocks'] = {b:{} for b in blocks}
 
-            for block in trainsnap[snap]['blocks'].keys():
+            for block in trainsnaps[snap]['blocks'].keys():
                 bs = block.split('/')
                 ppr = '/'.join(bs[-2:])
-                trainsnap[snap][block]['featpath'] = {'{0}/{1}.{2}'.format(self.trainpfeaturebase, ppr, feat)\
-                                                          :feat for feat in self.featurelist}
+                fpaths = ['{0}/{1}.{2}'.format(self.trainpfeaturepath, ppr, feat)\
+                          if feat!='z' else sz for feat in self.featurelist]
+                trainsnaps[snap]['blocks'][block]['features'] = dict(zip(fpaths, flist))
 
         self.trainingData = TrainingData(trainsnaps)
-            
 
-        #After constructing dictonary w/ all training info,
-        #go ahead and turn it into objects
+    def genValidationData(self):
 
-        self.trainsnaps = []
-        for snap in trainsnaps
+        if not hasattr(self, 'validparts'):
+            print('[Config] No validation data found')
+            return
 
-        
-
-    def getParticlePaths(self):
-        """
-        Read in the paths to the particle files from the 
-        file pointed to by particlePath
-        """
-        self.pplist = []
-
-        with open(self.particlepath,'r') as fp:
-
-            while True:
-                p = fp.readline()
-                p = p.strip()
-                if p=='':
-                    break
-
-                self.pplist.append(p)
-
-    def getFeaturePaths(self, halos=False):
-        """
-        Pair feature paths with the feature names to be
-        read in from them
-        """
-        paths = []
-        features = []
-        if halos!=False:
-            zs = []
-
-        if halos==False:
-            self.featuredict = {}
-            self.pfeaturedict = {}
-            path = self.featurepath
-        else:
-            self.hfeaturedict = {}
-            path = self.hfeaturepath
-        
-        with open(path,'r') as fp:
-            if halos==False:
-                for i in range(len(self.pplist)):
-                    for j in range(len(self.nfeatures)):
-                        p = fp.readline()
-                        p = p.strip()
-                        ps = p.split()
-                        if len(ps)!=2:
-                            print("Incorrectly formatted feature file!\n "\
-                                      "Please make sure number of columns==2\n "\
-                                      "and total number of files is equal to\n "\
-                                      "Number of features * Number of paths in\n "\
-                                      "particlepath")
-                            raise
-                        
-                        paths.append(ps[0])
-                        features.append(ps[1])
-                
-                    temp = {}
-                    for j in range(len(paths)):
-                        if paths[j] not in temp.keys():
-                            temp.update({paths[j]:[features[j]]})
-                        else:
-                            temp[paths[j]].append(features[j])
-                        if paths[j] not in self.pfeaturedict.keys():
-                            self.pfeaturedict[paths[j]] = [features[j]]
-                        else:
-                            self.pfeaturedict[paths[j]].append(features[j])
-
-                    self.featuredict.update({self.pplist[i]:temp})
-                    paths = []
-                    features = []
-            else:
-                p = fp.readline()
-                f = 0
-                while p!='':
-                    p = p.strip()
-                    ps = p.split()
-                    if len(ps)!=3:
-                        print("Incorrectly formatted feature file!\n "\
-                                  "Please make sure number of columns==3\n "\
-                                  "and total number of files is equal to\n "\
-                                  "Number of features * Number of paths in\n "\
-                                  "particlepath")
-                        raise
-                    zs.append(ps[0])                    
-                    paths.append(ps[1])
-                    features.append(ps[2])
+        validparts = {}
+        vp = []
+        try:
+            with open(self.validparts, 'r') as fp:
+                while True:
                     p = fp.readline()
-                
-                temp = {}
-                for j in range(len(paths)):
-                    if paths[j] not in temp.keys():
-                        temp.update({paths[j]:[features[j]]})
-                    else:
-                        temp[paths[j]].append(features[j])
+                    p = p.strip()
+                    if p=='':
+                        break
+                    vp.append(p)
+        except:
+            #If can't open try using as globpath
+            vp = glob(self.validparts)
 
-                    self.hfeaturedict = temp
-                    self.zs = zs
+        for parts in vp:
+            blockglob = '{0}/{1}*'.format(parts, self.validblockbase)
+            blocks = glob(blockglob)
+            blocks = {b:{} for b in blocks}
 
-    def getPredPaths(self):
-        """
-        Pair feature paths with the feature names to be
-        read in from them
-        """
-        paths = []
-        features = []
-        zs = []
-        self.preddict = {}
-        path = self.hpredpath
-        
-        with open(path,'r') as fp:
-            p = fp.readline()
-            f = 0
-            while p!='':
-                p = p.strip()
-                ps = p.split()
-                if len(ps)!=3:
-                    print("Incorrectly formatted feature file!\n "\
-                              "Please make sure number of columns==3\n "\
-                              "and total number of files is equal to\n "\
-                              "Number of features * Number of paths in\n "\
-                              "particlepath")
-                    raise
-                zs.append(ps[0])                    
-                paths.append(ps[1])
-                features.append(ps[2])
-                p = fp.readline()
-                
-            temp = {}
-            for j in range(len(paths)):
-                if paths[j] not in temp.keys():
-                    temp.update({paths[j]:[features[j]]})
-                else:
-                    temp[paths[j]].append(features[j])
-                    
-                self.preddict = temp
-                if set(zs)!=set(self.zs):
-                    raise ValueError("The redshifts in the pred files do not\n "\
-                                     "match the redshifts in the halo feature files!\n")
+            for block in blocks.keys():
+                bs = block.split('/')
+                ppr = '/'.join(bs[-2:])
+                blocks[block]['features'] = {'{0}/{1}.{2}'.format(self.validpfeaturebase, ppr, feat)\
+                                                          :feat for feat in self.featurelist}
+            validparts.update(blocks)
 
+        self.validationData = ValidationData(self.validhlist, validparts)
+            
+def reformat_features(basenames, blockbase, nblockbase, featurebase, feature):
 
+    for base in basenames:
+        bs = base.split('/')
+        blockglob = '{0}/{1}/{2}*'.format(featurebase, bs[-1], blockbase)
+        blocks = glob(blockglob)
+        for block in blocks:
+            bs = block.split('/')
+            bs[-1] = bs[-1].replace(blockbase, nblockbase)
+            bs[-1]+='.{0}'.format(feature)
+            nblock = '/'.join(bs)
+            #print('{0} --> {1}'.format(block, nblock))
+            #check to make sure we're not writing over anything
+            if os.path.exists(nblock):
+                print('{0} already exists! Skipping...')
+                continue
+            os.rename(block, nblock)
+    
 def readConfigFile(fname):
     
     with open(fname, 'r') as fp:
-        
+        linecount = 0
         l = fp.readline()
         keys = []
         values = []
@@ -272,34 +246,40 @@ def readConfigFile(fname):
         while l!='':
             l = l.strip()
 
-            if (len(l)==0) or (l[0]=='#'): 
+            if (len(l)==0) or (l[0]=='#'):
                 l = fp.readline()
                 continue
 
             ls = l.split()
+            for i, e in enumerate(ls):
+                if e[0]=='#':
+                    ls = ls[:i]
 
             if len(ls)==1:
-                if ls[0]=='featurelist':
-                    keys.append(ls[0])
-                    values.append(ls[1])
-                    l = fp.readline()
-                    continue
                 print(ls)
                 print("Only one columns detected in a row in the config file.\n"\
                       "Please check your formatting")
-                raise
+                print("Offending line #{0}: {1}".format(linecount, l))
+                raise(IOError)
+            elif (ls[0]=='featurelist') or (ls[0]=='predlist'):
+                keys.append(ls[0])
+                values.append(list(ls[1:]))
+                l = fp.readline()
+                continue
             elif len(ls)>2: 
+
                 print("More than two columns in the config file.\n"\
                       "Please check your formatting")
-                raise
+                print("Offending line #{0}: {1}".format(linecount, l))
+                raise(IOError)
             
             keys.append(ls[0])
             values.append(ls[1])
             l = fp.readline()
+            linecount+=1
 
     pdict = dict(zip(keys, values))
     return Config(pdict)
-
 
 def combineHalos(globpath, outpath):
     

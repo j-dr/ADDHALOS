@@ -10,23 +10,24 @@ import trainio
 
 
 
-def trainModel(hfeatdata, pfeatdata, preddata, **kwargs):
+def trainModel(config, store=True):
     """
-    Given dictionaries with keys as paths, values as features to use,
-    read in data and train the model.
-    
+    Given a Config object, load the training data
+    train a model on it, saving it to disk
+    if desired
     """
-    hfeatures = trainio.readData(hfeatdata)
-    pfeatures = trainio.readData(pfeatdata)
-    pred = trainio.readData(preddata)
+    td = config.trainingData
+    modelparams = config.modelparams
 
-    if 'type' in kwargs.keys():
-        m = getattr(model, kwargs['type'])
+    if 'type' in modelparams.keys():
+        m = getattr(model, modelparams['type'])
     else:
         #use default GMM model
         m = getattr(model, 'GMM')
 
-    mdl = m(hfeatures, pfeatures, pred, **kwargs)
+    td.genTrainingArrays()
+
+    mdl = m(td.hfeatures, td.pfeatures, td.pred, store=store, **modelparams)
 
     print('Preprocessing')
     mdl.preprocess()
@@ -36,14 +37,11 @@ def trainModel(hfeatdata, pfeatdata, preddata, **kwargs):
     
     return mdl
 
-
-
-if __name__ == "__main__":    
+if __name__ == "__main__":
 
     cfg = sys.argv[-1]
     params = haloio.readConfigFile(cfg)
-    mdl = trainModel(params.hfeaturedict, params.pfeaturedict, params.preddata, \
-                     store=True, **params.modelparams)
+    mdl = trainModel(params, store=True)
     print('visualizing')
     mdl.visModel(fname='train_tests/gmm_C250_99_nc200.png')
 

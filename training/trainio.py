@@ -22,7 +22,7 @@ def readPartRnn(filepath):
         #read in densities
         bytes = fp.read()
         delta = struct.unpack('{0}f'.format(head[1]), bytes[:-4])
-        dtype = np.dtype([('pdelta', float)])
+        dtype = np.dtype([('delta', float)])
         #delta = np.array(delta[:-1])
         delta = np.array(delta)
         delta.dtype = dtype
@@ -37,7 +37,7 @@ def readHaloRnn(filepath):
 
     """
     
-    dtype = np.dtype([('id', int), ('hdelta', float)])
+    dtype = np.dtype([('id', int), ('delta', float)])
     delta = np.genfromtxt(filepath, dtype=dtype)
     delta = delta[delta['id']!=0]
     return delta
@@ -90,9 +90,9 @@ def readGadgetParticles(filepath):
     """
 
     s = pnb.load(filepath)
-    dt = np.dtype([('ID',int), \
-                   ('PX',float), ('PY',float), ('PZ',float),\
-                   ('VX',float), ('VY',float), ('VZ',float)])
+    dt = np.dtype([('id',int), \
+                   ('x',float), ('y',float), ('z',float),\
+                   ('vx',float), ('vy',float), ('vz',float)])
     parts = np.hstack((np.atleast_2d(np.array(s['iord'])).T, np.array(s['pos']), np.array(s['vel'])))
     parts.dtype = dt
     return parts
@@ -116,16 +116,17 @@ def readData(indict):
     by the data in the file located at the path provided
     
     """
-
+    print(indict)
+    data = None
     paths = indict.keys()
     feats = [f for f in flatten(indict.values())]
     dt = np.dtype([(f, float) for f in feats])
-
+    print(dt)
     for i, path in enumerate(paths):
         #Check to see what type of reader we need
-        if 'hdelta' in indict[path]:
+        if ('delta' in indict[path]) and ('hlist' in str(path)):
             d = readHaloRnn(path)
-        elif 'pdelta' in indict[path]:
+        elif 'delta' in indict[path]:
             if '*' in path:
                 files = glob(path)
                 for j,f in enumerate(files):
@@ -136,15 +137,21 @@ def readData(indict):
                         d = np.hstack((d,gd))
             else:
                 d = readPartRnn(path)
-        elif 'hlist' in path:
+        elif 'hlist' in str(path):
             d = readHL(path, fields = indict[path])
+        elif 'z' in indict[path]:
+            if i==0:
+                paths.append(path)
+                continue
+            d = np.zeros(len(d), dtype=np.dtype([('z',float)]))
+            d['z']+=path
         else:
             print("""This feature is not currently handled, if you would like to use
                      it, please add a new i/o fuction
                      """)
             return None
 
-        if i==0:
+        if data==None:
             data = np.ndarray(len(d),dtype=dt)
             data_view = data.view(float).reshape(len(data), -1)
         
@@ -154,6 +161,7 @@ def readData(indict):
         ii = np.ndarray(len(indict[path]), dtype=int)
         for i in range(len(ii)):
             ii[i] = np.where(np.array(dt.names)==indict[path][i])[0][0]
+
         data_view[:,ii] = d[indict[path]].view(np.float).reshape(len(d),-1)
         
     return data
