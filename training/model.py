@@ -772,12 +772,20 @@ class GMM(Model):
             raise AttributeError("n_components was not defined! Please define upon model instantiation")
         self.preproc_hist()
         self.feature_dist()
+        if hasattr(self, 'tsetout'):
+            self.characterize_tset()
 
         if self.store==True:
             self.hfeatures=None
             self.pfeatures=None
             self.pred = None
-        
+
+    def characterize_tset(self):
+        figure = triangle.corner(self.X, labels=labels,
+                                 quantiles=[0.16, 0.5, 0.84],
+                                 show_titles=True, title_args={"fontsize": 12})
+        plt.savefig(self.tsetout)
+    
     def preproc_hist(self):
         self.clean_pred(key=self.pred.dtype.names[0])
         arrays = [self.hfeatures, self.pred]
