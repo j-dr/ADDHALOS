@@ -97,6 +97,57 @@ class TrainingData:
         self.hfeatures = hf
         self.pred = pr
 
+    def linkPaths(self, linkbase):
+        
+        try:
+            os.makedirs('{0}/snaps'.format(linkbase))
+            os.makedirs('{0}/feats'.format(linkbase))
+            os.makedirs('{0}/halos'.format(linkbase))
+        except Exception as e:
+            print(e)
+        for i, snap in enumerate(self.snapshots):
+            ssnap = snap.snappath.split('/')
+            plink = '{0}/snaps/{1}'.format(linkbase, ssnap[-1])
+            flink = '{0}/feats/{1}'.format(linkbase, ssnap[-1])
+
+            try:
+                os.mkdir(plink)
+                os.mkdir(flink)
+            except Exception as e:
+                print(e)
+            
+            for b in snap.blocks:
+                #link particles
+                ps = b.particlepath.split('/')
+                try:
+                    os.symlink(b.particlepath, '{0}/{1}'.format(plink, ps[-1]))
+                except Exception as e:
+                    print(e)
+
+                #link particle features
+                for p in b.featuredict.keys():
+                    if 'z' in b.featuredict[p]: continue
+                    ps = p.split('/')
+                    try:
+                        os.symlink(p, '{0}/{1}'.format(flink, ps[-1]))
+                    except Exception as e:
+                        print(e)
+
+            hs = snap.hlist.hlistpath.split('/')
+            try:
+                os.symlink(snap.hlist.hlistpath, '{0}/halos/{1}'.format(linkbase, hs[-1]))
+            except Exception as e:
+                print(e)
+            
+            for p in snap.hlist.featuredict.keys():
+                if 'z' in snap.hlist.featuredict[p]: continue
+                ps = p.split('/')
+                try:
+                    os.symlink(p, '{0}/{1}'.format(flink, ps[-1]))
+                except Exception as e:
+                    print(e)
+                     
+
 class ValidationData:
     
     def __init__(self, hlistdict, blockdict):
@@ -116,7 +167,9 @@ class Config:
         for key in pdict.keys():
             if 'model' in key.lower():
                 mp = key.split('model')[-1]
-                self.modelparams[mp] = pdict[key]
+                p = pdict[key]
+                if 'component' in mp: p = int(p)
+                self.modelparams[mp] = p
 
             else:
                 if key=='featurelist':
