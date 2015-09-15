@@ -11,17 +11,16 @@ from sklearn.cross_validation import train_test_split
 from sklearn.metrics import r2_score, make_scorer
 from sklearn.externals import joblib
 from abc import ABCMeta, abstractmethod
-from astroML.density_estimation import bayesian_blocks
 import random
 import munge
 import pickle
+
 try:
     import triangle
     hasTriangle = True
 except ImportError, e:
     hasTriangle = False
     pass
-
 
 class Model:
     __metaclass__ = ABCMeta
@@ -36,14 +35,8 @@ class Model:
             self.pred_dtype = pred.dtype
             self.feat_dtype = hfeatures.dtype
             
-            if len(hfeatures.shape) == 2:
-                self.nfeat = hfeatures.shape[1]
-            else:
-                self.nfeat = 1
-            if len(pred.shape) == 2:
-                self.npred = pred.shape[1]
-            else:
-                self.npred = 1
+            self.nfeat = len(hfeatures.dtype)
+            self.npred = len(pred.dtype)
 
             self.store = store
             self.lstep = lstep
