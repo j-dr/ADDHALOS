@@ -18,9 +18,13 @@ import pickle
 try:
     import triangle
     hasTriangle = True
-except ImportError, e:
-    hasTriangle = False
-    pass
+except:
+    try:
+        import corner as triangle
+        hasTriangle = True    
+    except ImportError, e:
+        hasTriangle = False
+        pass
 
 class Model:
     __metaclass__ = ABCMeta
@@ -781,6 +785,7 @@ class GMM(Model):
             self.pred = None
 
     def characterize_tset(self):
+        if hasTriangle==False: return
         figure = triangle.corner(self.X, labels=labels,
                                  quantiles=[0.16, 0.5, 0.84],
                                  show_titles=True, title_args={"fontsize": 12})
