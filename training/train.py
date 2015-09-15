@@ -33,7 +33,7 @@ def trainModel(config, store=True):
     mdl.preprocess()
 
     print('Training')
-    mdl.train(cv=cv)
+    mdl.train()
     
     return mdl
 
@@ -43,5 +43,5 @@ if __name__ == "__main__":
     params = haloio.readConfigFile(cfg)
     mdl = trainModel(params, store=True)
     print('visualizing')
-    mdl.visModel(fname='train_tests/gmm_C250_99_nc200.png')
+    mdl.visModel(fname='train_tests/gmm_C250_z_nc20.png')
 
