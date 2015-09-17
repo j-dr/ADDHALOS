@@ -784,7 +784,7 @@ class GMM(Model):
             self.pfeatures=None
             self.pred = None
 
-    def characterize_tset(self):
+    def characterize_tset(self, labels=None):
         if hasTriangle==False: return
         figure = triangle.corner(self.X, labels=labels,
                                  quantiles=[0.16, 0.5, 0.84],
@@ -819,7 +819,6 @@ class GMM(Model):
         self.hwCDF = np.cumsum(self.reg.weights_)
         if hasattr(self, 'path'):
             joblib.dump(self, self.path)
-
 
     def predict(self, fvec):
         #condition GMM on given features
