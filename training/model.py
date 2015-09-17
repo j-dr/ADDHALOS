@@ -776,6 +776,9 @@ class GMM(Model):
             raise AttributeError("n_components was not defined! Please define upon model instantiation")
         self.preproc_hist()
         self.feature_dist()
+        if hasattr(self, 'path'):
+            joblib.dump(self, self.path)
+
         if hasattr(self, 'tsetout'):
             self.characterize_tset()
         
@@ -784,8 +787,7 @@ class GMM(Model):
             self.pfeatures=None
             self.pred = None
 
-        if hasattr(self, 'path'):
-            joblib.dump(self, self.path)
+
 
     def characterize_tset(self, labels=None):
         if hasTriangle==False: return
