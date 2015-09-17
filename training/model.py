@@ -778,11 +778,14 @@ class GMM(Model):
         self.feature_dist()
         if hasattr(self, 'tsetout'):
             self.characterize_tset()
-
+        
         if self.store==True:
             self.hfeatures=None
             self.pfeatures=None
             self.pred = None
+
+        if hasattr(self, 'path'):
+            joblib.dump(self, self.path)
 
     def characterize_tset(self, labels=None):
         if hasTriangle==False: return
