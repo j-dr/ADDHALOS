@@ -1,5 +1,6 @@
 from __future__ import print_function, division
 from ..addhalos import haloio
+from sklearn.externals import joblib
 import numpy as np
 if __name__=='__main__':
     import matplotlib as mpl
@@ -36,6 +37,17 @@ def trainModel(config, store=True):
     mdl.train()
     
     return mdl
+
+def trainFromRestart(restartpath):
+    """
+    Restart training from a save point after the feature 
+    distribution GMM has been trained
+    """
+    
+    mdl = joblib.load(restartpath)
+    mdl.train()
+    return mdl
+
 
 if __name__ == "__main__":
 
