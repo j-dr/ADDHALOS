@@ -1,4 +1,3 @@
 #ADDHALOS
 
-Adding Density (maybe) Dependent HALOs to lightcone Simulations
-
+Adding Density Dependent HALOs to simulations (archaic)
