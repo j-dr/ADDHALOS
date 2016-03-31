@@ -2,6 +2,7 @@ from __future__ import print_function, division
 import numpy as np
 import scipy as sp
 import matplotlib.pyplot as plt
+import tensorflow as tf
 from matplotlib import cm
 from bisect import bisect_left
 from sklearn import gaussian_process, ensemble, tree, mixture
@@ -925,6 +926,150 @@ class GMM(Model):
         raise NotImplementedError
         
         
+class MDN(Model):
+
+    def __init__(self, hfeatures, pfeatures, pred, pmod=None, store=False, lstep=None, **kwargs):
+        super(MDN,self).__init__(hfeatures, pfeatures, pred, pmod=pmod, store=store, lstep=lstep)
+
+        self.n_components = kwargs['n_components']
+        self.nout = self.n_components*(1 + 2*self.npred)
+
+    def feature_dist(self):
+        """
+        Fit a standard neural network to the distribution of particle features
+        """
+        pass
         
+
+    def assignHalo(self, fvec):
+        """
+        Marginalize fitted MDN to get P(halo exists | fvec)
+        """
+        pass
+
+    def preprocess(self):
+        """
+        Preprocess the data that we will fit the model to
+
+        """
+        if not hasattr(self, 'n_components'):
+            raise AttributeError("n_components was not defined! Please define upon model instantiation")
+        self.feature_dist()
+        if hasattr(self, 'path'):
+            joblib.dump(self, self.path)
+
+        if hasattr(self, 'tsetout'):
+            self.characterize_tset()
         
+        if self.store==True:
+            self.hfeatures=None
+            self.pfeatures=None
+            self.pred = None
+
+
+
+    def characterize_tset(self, labels=None):
+        if hasTriangle==False: return
+        figure = triangle.corner(self.X, labels=labels,
+                                 quantiles=[0.16, 0.5, 0.84],
+                                 show_titles=True, title_args={"fontsize": 12})
+        plt.savefig(self.tsetout)
+    
+
+    def train(self, cv=None):
+
+        #split into test and train sets
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=0.1, random_state=0)
         
+        x  = tf.placeholder("float", shape=[None,self.nfeat])
+        y = tf.placeholder("float",shape=[None,self.npred])
+
+        #inputs to hidden layer
+        Wxh = tf.Variable(tf.random_normal([self.nfeat, self.nhidden], stddev=0.5, dtype=tf.float32))
+        bxh = tf.Variable(tf.random_normal([self.nhidden], stddev=0.5, dtype=tf.float32))
+
+        #hidden layer to outputs
+        Who = tf.Variable(tf.random_normal([self.nhidden, self.nout], stddev=0.5, dtype=tf.float32))
+        bho = tf.Variable(tf.random_normal([self.nout], stddev=0.5, dtype=tf.float32))
+
+        hh    = tf.nn.tanh(tf.matmul(x,Wxh) + bxh)
+        out   = tf.matmul(hh, Who) + bho
+
+        #map nn outputs to gmm parameters
+        pi, sigma, mu = self.get_mixture_params(out)
+
+        #minimization step
+        lossfcn = self.tf_loglikelihood(pi, sigma, mu, y)
+        train_op = tf.train.AdamOptimizer().minimize(lossfcn)
+
+        #start session
+        with tf.Session as sess:
+            saver = tf.train.Saver()
+            
+            #determine number of batches per epoch
+            ne = self.X_train.shape[0]
+            nb = (nexam + self.batchsize - 1)/self.batchsize
+            
+            loss = np.zeros(nb*self.nepoch)
+            for i in xrange(self.nepoch):
+                for j in xrange(nb):
+                    sess.run(train_op, feed_dict{x:self.X_train, y:self.y_train})
+                    loss[i*nb+j] = sess.run(lossfcn, feed_dict={x:self.X_train, y:self.y_train})
+
+                print("Loss after {0} epochs:    {1}".format(i+1, loss[i*nb+j]))
+
+                if self.store==True:
+                    #save the session after every epoch
+                    if hasattr(self, 'path'):
+                        save_path = saver.save(sess, self.path)
+                        print("Model saved in file: {0}".format(save_path))
+
+
+    def get_mixture_params(output):
+        pi    = tf.placeholder(dtype=tf.float32, shape=[None,self.n_components])
+        sigma = tf.placeholder(dtype=tf.float32, shape=[None,self.npred, self.n_components])
+        mu    = tf.placeholder(dtype=tf.float32, shape=[None,self.npred, self.n_components])
+        
+        pi_    = tf.slice(output, [0,0], [-1,self.n_components])
+        sigma_ = tf.slice(output, [0,self.n_components], [-1,self.npred*self.n_components])
+        mu_    = tf.slice(output, [0,self.n_components*(1+self.npred)], [-1,self.npred*self.n_components])
+        
+        sigma_ = tf.reshape(sigma_, [-1, self.npred, self.n_components])
+        mu     = tf.reshape(mu_, [-1, self.npred, self.n_components])
+        
+        max_pi  = tf.reduce_max(pi_, 1, keep_dims=True)
+        sub_pi  = tf.exp(tf.sub(pi_, max_pi))
+        norm_pi = tf.inv(tf.reduce_sum(sub_pi, 1, keep_dims=True))
+        pi      = tf.mul(norm_pi, sub_pi)
+        
+        sigma = tf.exp(sigma_)
+        
+        return pi, sigma, mu
+        
+    def tf_normal(y, mu, sigma):
+        norm   = 1 / math.sqrt(2*math.pi)
+        ytile  = tf.tile(tf.reshape(y,[-1,self.self.npred,1]),[1,1,self.self.n_components])
+        result = tf.sub(ytile, mu)
+        result = tf.mul(result,tf.inv(sigma))
+        result = -tf.square(result)/2
+        result = tf.reduce_sum(result, 1, keep_dims=True)
+        detsigma = tf.reduce_sum(sigma, 1, keep_dims=True)
+        return tf.mul(tf.exp(result),tf.inv(detsigma))*norm
+
+    def tf_loglikelihood(pi, sigma, mu, y):
+        result = tf_normal(y, out_mu, out_sigma)
+        result = tf.mul(result, out_pi)
+        result = tf.reduce_sum(result, 2, keep_dims=True)
+        result = -tf.log(result)
+        return tf.reduce_mean(result)
+
+    def predict(self, fvec):
+        pass
+
+    def visModel(self, labels=None, fname=None):
+        pass
+    
+    def visCPDF(self, condition):
+
+        raise NotImplementedError
+    
