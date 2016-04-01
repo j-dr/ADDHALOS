@@ -929,10 +929,20 @@ class GMM(Model):
 class MDN(Model):
 
     def __init__(self, hfeatures, pfeatures, pred, pmod=None, store=False, lstep=None, **kwargs):
-        super(MDN,self).__init__(hfeatures, pfeatures, pred, pmod=pmod, store=store, lstep=lstep)
+        super(MDN,self).__init__(hfeatures, pfeatures, pred, pmod=pmod, store=store, lstep=lstep, **kwargs)
 
         self.n_components = kwargs['n_components']
+        self.nhidden = int(self.nhidden)
         self.nout = self.n_components*(1 + 2*self.npred)
+        if 'batchsize' not in kwargs.keys():
+            self.batchsize = 10000
+        else:
+            self.batchsize = kwargs['batchsize']
+
+        if 'nepoch' not in kwargs.keys():
+            self.nepoch = 1
+        else:
+            self.nepoch = kwargs['nepoch']
 
     def feature_dist(self):
         """
@@ -954,19 +964,18 @@ class MDN(Model):
         """
         if not hasattr(self, 'n_components'):
             raise AttributeError("n_components was not defined! Please define upon model instantiation")
-        self.feature_dist()
-        if hasattr(self, 'path'):
-            joblib.dump(self, self.path)
 
-        if hasattr(self, 'tsetout'):
-            self.characterize_tset()
+        self.X = self.hfeatures.view((np.float, len(self.hfeatures.dtype.names)))
+        self.y = self.pred.view((np.float, len(self.hfeatures.dtype.names)))
+
+        self.X = np.atleast_2d(self.X).T
+        self.y = np.atleast_2d(self.y).T
+
         
-        if self.store==True:
-            self.hfeatures=None
-            self.pfeatures=None
-            self.pred = None
-
-
+        #if self.store==True:
+        #    self.hfeatures=None
+        #    self.pfeatures=None
+        #    self.pred = None
 
     def characterize_tset(self, labels=None):
         if hasTriangle==False: return
@@ -981,7 +990,7 @@ class MDN(Model):
         #split into test and train sets
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=0.1, random_state=0)
         
-        x  = tf.placeholder("float", shape=[None,self.nfeat])
+        x = tf.placeholder("float", shape=[None,self.nfeat])
         y = tf.placeholder("float",shape=[None,self.npred])
 
         #inputs to hidden layer
@@ -1003,18 +1012,23 @@ class MDN(Model):
         train_op = tf.train.AdamOptimizer().minimize(lossfcn)
 
         #start session
-        with tf.Session as sess:
+        with tf.Session() as sess:
+            sess.run(tf.initialize_all_variables())
             saver = tf.train.Saver()
             
             #determine number of batches per epoch
             ne = self.X_train.shape[0]
-            nb = (nexam + self.batchsize - 1)/self.batchsize
+            nb = (ne + self.batchsize - 1)//self.batchsize
             
             loss = np.zeros(nb*self.nepoch)
             for i in xrange(self.nepoch):
                 for j in xrange(nb):
-                    sess.run(train_op, feed_dict{x:self.X_train, y:self.y_train})
-                    loss[i*nb+j] = sess.run(lossfcn, feed_dict={x:self.X_train, y:self.y_train})
+                    if (j+1)%10==0:
+                        print(loss[i*nb+j])
+                    fd = {x:self.X_train[j*self.batchsize:(j+1)*self.batchsize],
+                          y:self.y_train[j*self.batchsize:(j+1)*self.batchsize]}
+                    sess.run(train_op, feed_dict=fd)
+                    loss[i*nb+j] = sess.run(lossfcn, feed_dict=fd)
 
                 print("Loss after {0} epochs:    {1}".format(i+1, loss[i*nb+j]))
 
@@ -1025,7 +1039,7 @@ class MDN(Model):
                         print("Model saved in file: {0}".format(save_path))
 
 
-    def get_mixture_params(output):
+    def get_mixture_params(self, output):
         pi    = tf.placeholder(dtype=tf.float32, shape=[None,self.n_components])
         sigma = tf.placeholder(dtype=tf.float32, shape=[None,self.npred, self.n_components])
         mu    = tf.placeholder(dtype=tf.float32, shape=[None,self.npred, self.n_components])
@@ -1046,19 +1060,19 @@ class MDN(Model):
         
         return pi, sigma, mu
         
-    def tf_normal(y, mu, sigma):
-        norm   = 1 / math.sqrt(2*math.pi)
-        ytile  = tf.tile(tf.reshape(y,[-1,self.self.npred,1]),[1,1,self.self.n_components])
+    def tf_normal(self, y, mu, sigma):
+        norm   = 1 / np.sqrt(2*np.pi)
+        ytile  = tf.tile(tf.reshape(y,[-1,self.npred,1]),[1,1,self.n_components])
         result = tf.sub(ytile, mu)
         result = tf.mul(result,tf.inv(sigma))
-        result = -tf.square(result)/2
+        result = -tf.div(tf.square(result),2)
         result = tf.reduce_sum(result, 1, keep_dims=True)
         detsigma = tf.reduce_sum(sigma, 1, keep_dims=True)
-        return tf.mul(tf.exp(result),tf.inv(detsigma))*norm
+        return tf.mul(tf.mul(tf.exp(result),tf.inv(detsigma)),norm)
 
-    def tf_loglikelihood(pi, sigma, mu, y):
-        result = tf_normal(y, out_mu, out_sigma)
-        result = tf.mul(result, out_pi)
+    def tf_loglikelihood(self, pi, sigma, mu, y):
+        result = self.tf_normal(y, mu, sigma)
+        result = tf.mul(result, pi)
         result = tf.reduce_sum(result, 2, keep_dims=True)
         result = -tf.log(result)
         return tf.reduce_mean(result)
