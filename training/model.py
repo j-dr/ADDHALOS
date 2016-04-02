@@ -937,12 +937,12 @@ class MDN(Model):
         if 'batchsize' not in kwargs.keys():
             self.batchsize = 10000
         else:
-            self.batchsize = kwargs['batchsize']
+            self.batchsize = int(kwargs['batchsize'])
 
         if 'nepoch' not in kwargs.keys():
             self.nepoch = 1
         else:
-            self.nepoch = kwargs['nepoch']
+            self.nepoch = int(kwargs['nepoch'])
 
     def feature_dist(self):
         """
