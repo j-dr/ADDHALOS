@@ -4,4 +4,7 @@
 *log
 *txt
 *#
+*pyc
 build/
+*slurm*
+*png

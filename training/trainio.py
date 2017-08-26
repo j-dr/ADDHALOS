@@ -6,7 +6,7 @@ import itertools
 import pynbody as pnb
 import collections
 from glob import glob
-from SimulationAnalysis import readHlist as readHL
+from helpers.SimulationAnalysis import readHlist as readHL
 
 def readPartRnn(filepath):
     """ 
@@ -21,6 +21,7 @@ def readPartRnn(filepath):
         head = struct.unpack('iiiii', bytes)
         #read in densities
         bytes = fp.read()
+        print(head)
         delta = struct.unpack('{0}f'.format(head[1]), bytes[:-4])
         dtype = np.dtype([('delta', float)])
         #delta = np.array(delta[:-1])

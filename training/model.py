@@ -14,6 +14,7 @@ from sklearn.externals import joblib
 from abc import ABCMeta, abstractmethod
 import random
 import munge
+import fitsio
 import pickle
 
 try:
@@ -944,18 +945,32 @@ class MDN(Model):
         else:
             self.nepoch = int(kwargs['nepoch'])
 
-    def feature_dist(self):
+    def trainHaloAssignment(self):
         """
-        Fit a standard neural network to the distribution of particle features
+        Fit a MDN to the distribution of particle features
         """
-        pass
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=0.1, random_state=0)
+        
+        x = tf.placeholder("float", shape=[None,self.nfeat])
+        y = tf.placeholder("float",shape=[None,self.npred])
+
+        #inputs to hidden layer
+        Wxh = tf.Variable(tf.random_normal([self.nfeat, self.nhidden], stddev=0.5, dtype=tf.float32))
+        bxh = tf.Variable(tf.random_normal([self.nhidden], stddev=0.5, dtype=tf.float32))
+
+        #hidden layer to outputs
+        Who = tf.Variable(tf.random_normal([self.nhidden, self.nout], stddev=0.5, dtype=tf.float32))
+        bho = tf.Variable(tf.random_normal([self.nout], stddev=0.5, dtype=tf.float32))
+
+        hh    = tf.nn.tanh(tf.matmul(x,Wxh) + bxh)
+        out   = tf.matmul(hh, Who) + bho
         
 
     def assignHalo(self, fvec):
         """
-        Marginalize fitted MDN to get P(halo exists | fvec)
+        Use NN to predict presence of halo
         """
-        pass
+
 
     def preprocess(self):
         """
@@ -965,9 +980,13 @@ class MDN(Model):
         if not hasattr(self, 'n_components'):
             raise AttributeError("n_components was not defined! Please define upon model instantiation")
 
+        self.clean_pred(key=self.pred.dtype.names[0])
+
+        self.pX = self.pfeatures.view((np.float, len(self.hfeatures.dtype.names)))
         self.X = self.hfeatures.view((np.float, len(self.hfeatures.dtype.names)))
         self.y = self.pred.view((np.float, len(self.hfeatures.dtype.names)))
 
+        self.pX = np.atleast_2d(self.pX).T
         self.X = np.atleast_2d(self.X).T
         self.y = np.atleast_2d(self.y).T
 
@@ -983,7 +1002,6 @@ class MDN(Model):
                                  quantiles=[0.16, 0.5, 0.84],
                                  show_titles=True, title_args={"fontsize": 12})
         plt.savefig(self.tsetout)
-    
 
     def train(self, cv=None):
 
@@ -1023,11 +1041,11 @@ class MDN(Model):
             loss = np.zeros(nb*self.nepoch)
             for i in xrange(self.nepoch):
                 for j in xrange(nb):
-                    if (j+1)%10==0:
-                        print(loss[i*nb+j])
                     fd = {x:self.X_train[j*self.batchsize:(j+1)*self.batchsize],
                           y:self.y_train[j*self.batchsize:(j+1)*self.batchsize]}
                     sess.run(train_op, feed_dict=fd)
+                    if (j+1)%10==0:
+                        print(loss[i*nb+j])                    
                     loss[i*nb+j] = sess.run(lossfcn, feed_dict=fd)
 
                 print("Loss after {0} epochs:    {1}".format(i+1, loss[i*nb+j]))
@@ -1037,6 +1055,18 @@ class MDN(Model):
                     if hasattr(self, 'path'):
                         save_path = saver.save(sess, self.path)
                         print("Model saved in file: {0}".format(save_path))
+
+            tenb = (self.X_test.shape[0] + self.batchsize -1)//self.batchsize
+            pred = np.zeros((self.X_test.shape[0], self.nfeat+2*self.npred))
+            pred[:,:self.nfeat] = self.X_test
+            pred[:,self.nfeat:self.nfeat+self.npred] = self.y_test
+
+            for j in range(tenb):
+                out_pi_test, out_sigma_test, out_mu_test = sess.run(self.get_mixture_params(out),
+                                                                    feed_dict={x: self.X_test[self.batchsize*j:self.batchsize*(j+1)]})
+                pred[self.batchsize*j:self.batchsize*(j+1),self.nfeat+self.npred:] = self.genpred(out_pi_test, out_mu_test, out_sigma_test)
+
+            fitsio.write(self.path+'.pred', pred)
 
 
     def get_mixture_params(self, output):
@@ -1077,6 +1107,32 @@ class MDN(Model):
         result = -tf.log(result)
         return tf.reduce_mean(result)
 
+    def get_pi_idx(self, x, pdf):
+        N = pdf.size
+        accumulate = 0
+        for i in range(0, N):
+            accumulate += pdf[i]
+            if (accumulate >= x):
+                return i
+        return -1
+    
+    def genpred(self, out_pi, out_mu, out_sigma):
+        NTEST = out_pi.shape[0]
+        result = np.random.rand(NTEST, self.npred) # initially random [0, 1]
+        rn = np.random.randn(NTEST, self.npred) # normal random matrix (0.0, 1.0)
+        mu = np.zeros(self.npred)
+        std = np.zeros(self.npred)
+        idx = 0
+        
+        # transforms result into random ensembles
+        for i in range(NTEST):
+            idx = self.get_pi_idx(result[i, 0], out_pi[i])
+            mu = out_mu[i, :, idx]
+            std = out_sigma[i, :, idx]
+            result[i, :] = mu + rn[i, :]*std
+
+        return result
+    
     def predict(self, fvec):
         pass
 
