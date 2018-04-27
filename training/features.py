@@ -7,7 +7,7 @@ import fitsio
 class Hlist:
 
     def __init__(self, hlistpath, fields=['x', 'y', 'z', 'm200b'], **kwargs):
-        
+
         self.hlistpath = hlistpath
         self.fields = fields
         for kwarg in kwargs:
@@ -15,12 +15,12 @@ class Hlist:
 
     def loadHalos(self):
         self.halos = readHL(self.hlistpath, fields=self.fields)
-        
+
     def rHalo(self, masscut=5e12, masstag='m200b'):
         """
         Given the positions and masses of a set of halos, calculate the distance
         to the nearest halo above the mass cut specified
-        
+
         Parameters
         ----------
         pos: array_like
@@ -35,7 +35,7 @@ class Hlist:
         mass = self.halos[masstag][sii]
         pos = self.halos[['x', 'y', 'z']][sii]
         del sii
-        
+
         lii = mass.searchsorted(masscut)
         self.rhalo = np.ndarray(len(pos), dtype=np.float64)
         with fast3tree(pos[lii:]) as tree:
@@ -52,7 +52,7 @@ class Hlist:
         outpath: str
             The path to write the features to
         dtype: np.dtype
-            The dtype of the output array. Features to write must 
+            The dtype of the output array. Features to write must
             be the names of the array fields
         """
         out = np.ndarray(len(self.halos), dtype=dtype)
